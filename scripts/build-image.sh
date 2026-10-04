@@ -137,10 +137,15 @@ if [ -z "${DOCKER:-}" ]; then
 		export DOCKER="podman"
 	fi
 fi
+# build-docker.sh writes its log into deploy/ and fails if the folder is missing
+mkdir -p "$BUILD/deploy"
 ./build-docker.sh
 
+# Docker extracts the results into build/pi-gen/deploy/; Podman's copy lands
+# them directly in build/pi-gen/. Collect from both.
 mkdir -p "$ROOT/deploy"
-find "$BUILD/deploy" -maxdepth 1 -type f \( -name '*.img' -o -name '*.info' -o -name '*.log' \) \
+find "$BUILD/deploy" "$BUILD" -maxdepth 1 -type f \
+	\( -name '*.img' -o -name '*.info' -o -name 'build.log' -o -name 'build-docker.log' \) \
 	-exec mv -f {} "$ROOT/deploy/" \;
 echo
 echo "Image(s) in $ROOT/deploy:"
