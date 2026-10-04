@@ -7,6 +7,7 @@ cp -a files/rootfs/. "${ROOTFS_DIR}/"
 mkdir -p "${ROOTFS_DIR}/opt/rockband-kiosk/bridge"
 cp -a files/bridge/rb-bridge files/bridge/rb_bridge "${ROOTFS_DIR}/opt/rockband-kiosk/bridge/"
 chmod 0755 "${ROOTFS_DIR}"/opt/rockband-kiosk/*.sh "${ROOTFS_DIR}/opt/rockband-kiosk/bridge/rb-bridge"
+cp files/make-invisible-cursor.py "${ROOTFS_DIR}/tmp/"
 
 user="${FIRST_USER_NAME}"
 home="${ROOTFS_DIR}/home/${user}"
@@ -28,13 +29,42 @@ if [ -z "${SSH_CONNECTION:-}" ] && [ "$(tty)" = "/dev/tty1" ]; then
 fi
 PROFILE
 
-# YARG settings: point it at the song library and skip first-run dialogs.
-# Partial JSON is fine; YARG fills in defaults for everything else.
+# No mouse pointer on the TV: cage loads the cursor theme named "default", so
+# point the kiosk user's default theme at the transparent one
+mkdir -p "${home}/.icons/default"
+printf '[Icon Theme]\nInherits=rockband-invisible\n' > "${home}/.icons/default/index.theme"
+
+# YARG settings: point it at the song library, skip first-run dialogs, and
+# start with the lightest graphics settings, since YARG runs under emulation.
+# Each setting is stored as its plain value; YARG fills in defaults for the
+# rest. VenueRenderingQuality 5 = UltraPerformance, VenueAntiAliasing 0 = None.
+# Resolution: YARG renders at this size and scales up to the TV (unset = the
+# TV's native resolution, 4K on many TVs, far too heavy under emulation).
+resolution_json=""
+case "${YARG_RESOLUTION}" in
+	*x*)
+		resolution_json="  \"Resolution\": { \"width\": ${YARG_RESOLUTION%x*}, \"height\": ${YARG_RESOLUTION#*x}, \"refreshRateRatio\": { \"numerator\": 60, \"denominator\": 1 } },"
+		;;
+esac
 mkdir -p "${home}/.local/share/yarg"
 cat > "${home}/.local/share/yarg/settings.json" <<JSON
 {
   "SongFolders": ["${SONGS_DIR}"],
-  "ShowAntiPiracyDialog": false
+  "ShowAntiPiracyDialog": false,
+${resolution_json}
+  "LowQuality": true,
+  "FpsStats": true,
+  "VSync": false,
+  "FpsCap": 60,
+  "VenueFpsCap": 30,
+  "VenueRenderingQuality": 5,
+  "VenueAntiAliasing": 0,
+  "VenuePostProcessing": false,
+  "DisableBloom": true,
+  "DisableFilmGrain": true,
+  "DisableDefaultBackground": true,
+  "DisableGlobalBackgrounds": true,
+  "DisablePerSongBackgrounds": true
 }
 JSON
 

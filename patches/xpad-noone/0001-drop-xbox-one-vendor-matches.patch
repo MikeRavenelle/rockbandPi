@@ -1,0 +1,97 @@
+From: rockbandPi
+Subject: [PATCH] Drop the remaining Xbox One vendor matches
+
+xpad-noone comments out its Xbox One device entries so xone can drive
+those devices, but the per-vendor XPAD_XBOXONE_VENDOR() matches were left
+in the id table. They make xpad claim Xbox One interfaces (class ff/47/d0),
+for example the PDP Riffmaster dongle (0e6f:0248), which then shows up as a
+"Generic X-Box pad" and never reaches xone. Comment them out as well.
+---
+diff --git a/xpad.c b/xpad.c
+index 7c22126..f7809ff 100644
+--- a/xpad.c
++++ b/xpad.c
+@@ -533,29 +533,29 @@ static const struct usb_device_id xpad_table[] = {
+ 	XPAD_XBOX360_VENDOR(0x0351),		/* CRKD Controllers */
+ 	XPAD_XBOX360_VENDOR(0x03eb),		/* Wooting Keyboards (Legacy) */
+ 	XPAD_XBOX360_VENDOR(0x03f0),		/* HP HyperX Xbox 360 controllers */
+-	XPAD_XBOXONE_VENDOR(0x03f0),		/* HP HyperX Xbox One controllers */
++	// XPAD_XBOXONE_VENDOR(0x03f0),		/* HP HyperX Xbox One controllers */
+ 	XPAD_XBOX360_VENDOR(0x044f),		/* Thrustmaster Xbox 360 controllers */
+-	XPAD_XBOXONE_VENDOR(0x044f),		/* Thrustmaster Xbox One controllers */
++	// XPAD_XBOXONE_VENDOR(0x044f),		/* Thrustmaster Xbox One controllers */
+ 	XPAD_XBOX360_VENDOR(0x045e),		/* Microsoft Xbox 360 controllers */
+-	XPAD_XBOXONE_VENDOR(0x045e),		/* Microsoft Xbox One controllers */
++	// XPAD_XBOXONE_VENDOR(0x045e),		/* Microsoft Xbox One controllers */
+ 	XPAD_XBOX360_VENDOR(0x046d),		/* Logitech Xbox 360-style controllers */
+ 	XPAD_XBOX360_VENDOR(0x0502),		/* Acer Inc. Xbox 360 style controllers */
+ 	XPAD_XBOX360_VENDOR(0x056e),		/* Elecom JC-U3613M */
+ 	XPAD_XBOX360_VENDOR(0x06a3),		/* Saitek P3600 */
+ 	XPAD_XBOX360_VENDOR(0x0738),		/* Mad Catz Xbox 360 controllers */
+ 	{ USB_DEVICE(0x0738, 0x4540) },		/* Mad Catz Beat Pad */
+-	XPAD_XBOXONE_VENDOR(0x0738),		/* Mad Catz FightStick TE 2 */
++	// XPAD_XBOXONE_VENDOR(0x0738),		/* Mad Catz FightStick TE 2 */
+ 	XPAD_XBOX360_VENDOR(0x07ff),		/* Mad Catz Gamepad */
+ 	XPAD_XBOX360_VENDOR(0x0b05),		/* ASUS controllers */
+-	XPAD_XBOXONE_VENDOR(0x0b05),		/* ASUS controllers */
++	// XPAD_XBOXONE_VENDOR(0x0b05),		/* ASUS controllers */
+ 	XPAD_XBOX360_VENDOR(0x0c12),		/* Zeroplus X-Box 360 controllers */
+ 	XPAD_XBOX360_VENDOR(0x0db0),		/* Micro Star International X-Box 360 controllers */
+ 	XPAD_XBOX360_VENDOR(0x0e6f),		/* 0x0e6f Xbox 360 controllers */
+-	XPAD_XBOXONE_VENDOR(0x0e6f),		/* 0x0e6f Xbox One controllers */
++	// XPAD_XBOXONE_VENDOR(0x0e6f),		/* 0x0e6f Xbox One controllers */
+ 	XPAD_XBOX360_VENDOR(0x0f0d),		/* Hori controllers */
+-	XPAD_XBOXONE_VENDOR(0x0f0d),		/* Hori controllers */
++	// XPAD_XBOXONE_VENDOR(0x0f0d),		/* Hori controllers */
+ 	XPAD_XBOX360_VENDOR(0x1038),		/* SteelSeries controllers */
+-	XPAD_XBOXONE_VENDOR(0x10f5),		/* Turtle Beach Controllers */
++	// XPAD_XBOXONE_VENDOR(0x10f5),		/* Turtle Beach Controllers */
+ 	XPAD_XBOX360_VENDOR(0x11c9),		/* Nacon GC100XF */
+ 	XPAD_XBOX360_VENDOR(0x11ff),		/* PXN V900 */
+ 	XPAD_XBOX360_VENDOR(0x1209),		/* Ardwiino Controllers */
+@@ -563,7 +563,7 @@ static const struct usb_device_id xpad_table[] = {
+ 	XPAD_XBOX360_VENDOR(0x1430),		/* RedOctane Xbox 360 controllers */
+ 	XPAD_XBOX360_VENDOR(0x146b),		/* Bigben Interactive controllers */
+ 	XPAD_XBOX360_VENDOR(0x1532),		/* Razer Sabertooth */
+-	XPAD_XBOXONE_VENDOR(0x1532),		/* Razer Wildcat */
++	// XPAD_XBOXONE_VENDOR(0x1532),		/* Razer Wildcat */
+ 	XPAD_XBOX360_VENDOR(0x15e4),		/* Numark Xbox 360 controllers */
+ 	XPAD_XBOX360_VENDOR(0x162e),		/* Joytech Xbox 360 controllers */
+ 	XPAD_XBOX360_VENDOR(0x1689),		/* Razer Onza */
+@@ -574,27 +574,27 @@ static const struct usb_device_id xpad_table[] = {
+ 	XPAD_XBOX360_VENDOR(0x1ee9),		/* ZOTAC Technology Limited */
+ 	XPAD_XBOX360_VENDOR(0x20bc),		/* BETOP wireless dongles */
+ 	XPAD_XBOX360_VENDOR(0x20d6),		/* PowerA controllers */
+-	XPAD_XBOXONE_VENDOR(0x20d6),		/* PowerA controllers */
++	// XPAD_XBOXONE_VENDOR(0x20d6),		/* PowerA controllers */
+ 	XPAD_XBOX360_VENDOR(0x2345),		/* Machenike Controllers */
+ 	XPAD_XBOX360_VENDOR(0x24c6),		/* PowerA controllers */
+-	XPAD_XBOXONE_VENDOR(0x24c6),		/* PowerA controllers */
++	// XPAD_XBOXONE_VENDOR(0x24c6),		/* PowerA controllers */
+ 	XPAD_XBOX360_VENDOR(0x2563),		/* OneXPlayer Gamepad */
+ 	XPAD_XBOX360_VENDOR(0x260d),		/* Dareu H101 */
+-	XPAD_XBOXONE_VENDOR(0x294b),		/* Snakebyte */
++	// XPAD_XBOXONE_VENDOR(0x294b),		/* Snakebyte */
+ 	XPAD_XBOX360_VENDOR(0x2993),		/* TECNO Mobile */
+ 	XPAD_XBOX360_VENDOR(0x2c22),		/* Qanba Controllers */
+ 	XPAD_XBOX360_VENDOR(0x2dc8),		/* 8BitDo Controllers */
+-	XPAD_XBOXONE_VENDOR(0x2dc8),		/* 8BitDo Controllers */
+-	XPAD_XBOXONE_VENDOR(0x2e24),		/* Hyperkin Controllers */
++	// XPAD_XBOXONE_VENDOR(0x2dc8),		/* 8BitDo Controllers */
++	// XPAD_XBOXONE_VENDOR(0x2e24),		/* Hyperkin Controllers */
+ 	XPAD_XBOX360_VENDOR(0x2f24),		/* GameSir Controllers */
+-	XPAD_XBOXONE_VENDOR(0x2e95),		/* SCUF Gaming Controller */
++	// XPAD_XBOXONE_VENDOR(0x2e95),		/* SCUF Gaming Controller */
+ 	XPAD_XBOX360_VENDOR(0x31e3),		/* Wooting Keyboards */
+ 	XPAD_XBOX360_VENDOR(0x3285),		/* Nacon GC-100 */
+-	XPAD_XBOXONE_VENDOR(0x3285),		/* Nacon Evol-X */
++	// XPAD_XBOXONE_VENDOR(0x3285),		/* Nacon Evol-X */
+ 	XPAD_XBOX360_VENDOR(0x3537),		/* GameSir Controllers */
+-	XPAD_XBOXONE_VENDOR(0x3537),		/* GameSir Controllers */
++	// XPAD_XBOXONE_VENDOR(0x3537),		/* GameSir Controllers */
+ 	XPAD_XBOX360_VENDOR(0x3651),		/* CRKD Controllers */
+-	XPAD_XBOXONE_VENDOR(0x366c),		/* ByoWave controllers */
++	// XPAD_XBOXONE_VENDOR(0x366c),		/* ByoWave controllers */
+ 	XPAD_XBOX360_VENDOR(0x37d7),		/* Flydigi Controllers */
+ 	XPAD_XBOX360_VENDOR(0x413d),		/* Black Shark Green Ghost Controller */
+ 	{ }

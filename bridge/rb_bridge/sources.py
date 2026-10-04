@@ -13,7 +13,7 @@ import os
 from evdev import ecodes as e
 
 from . import reports as r
-from .uhid import UHIDDevice
+from .uhid import BUS_I2C, UHIDDevice
 
 log = logging.getLogger(__name__)
 
@@ -284,9 +284,14 @@ class Gamepad(Source):
 
 
 def make_gamepad_uhid(dev):
+    # Announced on the I2C bus, not USB: the kernel lists the DualShock 4's USB
+    # and Bluetooth IDs as "has a special driver", so hid-generic refuses a USB
+    # one even with hid-playstation blacklisted, and no hidraw node appears.
+    # hidapi (and so YARG) accepts I2C devices; the USB IDs still match
+    # Unity's DualShock 4 layout.
     return UHIDDevice('Wireless Controller', r.DS4_VID, r.DS4_PID, r.DS4_REV,
                       r.DS4_DESCRIPTOR, phys=f'rb-bridge/{os.path.basename(dev.path)}',
-                      uniq=dev.uniq or '')
+                      uniq=dev.uniq or '', bus=BUS_I2C)
 
 
 # --- classification ----------------------------------------------------------

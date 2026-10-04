@@ -6,12 +6,16 @@
 # Escape hatch: over SSH, `touch ~/.kiosk-disable` and reboot.
 set -uo pipefail
 
-YARG_RENDERER=vulkan
+YARG_RENDERER=opengl
 ON_QUIT=poweroff
 # shellcheck source=/dev/null
 [ -r /etc/rockband-kiosk/kiosk.conf ] && . /etc/rockband-kiosk/kiosk.conf
 
 [ -e "$HOME/.kiosk-disable" ] && { echo "Kiosk disabled (~/.kiosk-disable exists)."; exit 0; }
+
+# Fully transparent cursor theme: no mouse pointer on the TV
+export XCURSOR_THEME=rockband-invisible
+export XCURSOR_SIZE=24
 
 LOG_DIR="$HOME/.local/state/yarg-kiosk"
 mkdir -p "$LOG_DIR"
@@ -40,7 +44,7 @@ while true; do
     quick_crashes=0
   fi
 
-  # Vulkan under Box64 is the fast path but the least proven; fall back once
+  # If Vulkan was chosen and keeps crashing, fall back to OpenGL once
   if [ "$quick_crashes" -ge 2 ] && [ "$renderer" = "vulkan" ]; then
     log "YARG keeps crashing on Vulkan; switching to OpenGL"
     renderer=opengl

@@ -22,6 +22,7 @@ UHID_DATA_MAX = 4096
 UHID_EVENT_SIZE = 4 + 128 + 64 + 64 + 2 + 2 + 4 * 4 + UHID_DATA_MAX
 
 BUS_USB = 0x03
+BUS_I2C = 0x18
 
 _CREATE2 = struct.Struct('<I128s64s64sHHIIII4096s')
 _INPUT2 = struct.Struct('<IH4096s')

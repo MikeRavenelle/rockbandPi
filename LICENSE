@@ -26,6 +26,9 @@ Exceptions:
 - The files in patches/xone/ modify xone, which is licensed under the GNU
   General Public License, version 2 or later. Those patches are licensed
   under GPL-2.0-or-later as well, not MIT.
+- The files in patches/xpad-noone/ modify xpad-noone, which is licensed
+  under the GNU General Public License, version 2. Those patches are
+  licensed under GPL-2.0 as well, not MIT.
 - The files in patches/pi-gen/ modify pi-gen and are licensed under pi-gen's
   BSD 3-Clause license.
 

@@ -21,6 +21,12 @@ WIFI_COUNTRY=US
 WIFI_SSID=""
 WIFI_PSK=""
 
+# --- Display -------------------------------------------------------------------
+# YARG's render resolution. 4K is far too heavy under emulation; YARG renders
+# at this size and scales it up to the TV. Examples: 1920x1080, 1280x720, or
+# "native" for the TV's own resolution. Can be changed later in YARG's settings.
+YARG_RESOLUTION=1920x1080
+
 # --- YARG ----------------------------------------------------------------------
 # Pinned release and its SHA-256 (from the downloaded Linux-x86_64 zip)
 YARG_VERSION=v0.15.0

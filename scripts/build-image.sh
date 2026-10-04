@@ -73,6 +73,7 @@ for src in xone xpad-noone; do
 done
 rsync -a --delete "$ROOT/rootfs/" "$STAGE/04-kiosk/files/rootfs/"
 rsync -a --delete --exclude __pycache__ --exclude tests "$ROOT/bridge/" "$STAGE/04-kiosk/files/bridge/"
+cp "$ROOT/scripts/lib/make-invisible-cursor.py" "$STAGE/04-kiosk/files/"
 
 # Resuming: stages listed in SKIP_STAGES reuse what the previous run built
 # (pi-gen still exports their image)
@@ -97,6 +98,7 @@ XPAD_NOONE_VERSION=$(printf %q "$XPAD_NOONE_VERSION")
 YARG_VERSION=$(printf %q "$YARG_VERSION")
 YARG_SHA256=$(printf %q "$YARG_SHA256")
 SONGS_DIR=/srv/songs
+YARG_RESOLUTION=$(printf %q "${YARG_RESOLUTION:-1920x1080}")
 KIOSK_PASSWORD=$(printf %q "$KIOSK_PASSWORD")
 WIFI_SSID=$(printf %q "${WIFI_SSID:-}")
 WIFI_PSK=$(printf %q "${WIFI_PSK:-}")

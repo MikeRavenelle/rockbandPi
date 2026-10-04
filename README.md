@@ -186,7 +186,15 @@ The user, password and SSH key come from `config/kiosk.conf`. The kiosk only run
 
 Settings on the Pi:
 - `/etc/rockband-kiosk/kiosk.conf`
-  - `YARG_RENDERER`: `vulkan` or `opengl`. If YARG keeps crashing at start on Vulkan, the kiosk switches to OpenGL by itself.
+  - `YARG_RENDERER`: `opengl` (default) or `vulkan`. Vulkan doesn't work on the Pi 5 with YARG v0.15.0: YARG asks for a depth buffer format (D32 float + stencil) the Pi's GPU doesn't offer, and the screen stays black or flickers.
+- **Render resolution:** left unset, YARG renders at the TV's native resolution, often 4K, which is far too heavy under emulation. The image sets YARG's resolution to `YARG_RESOLUTION` from `config/kiosk.conf` (default `1920x1080`) and scales the picture up to the TV.
+  - **To change it later:** use Settings > Graphics > Resolution in YARG, or edit `"Resolution"` in `~/.local/share/yarg/settings.json` with YARG closed. `1280x720` is faster.
+- **YARG graphics:** the image starts YARG with its lightest settings:
+  - low quality on; bloom, film grain, venue post-processing and anti-aliasing off
+  - venue at UltraPerformance, capped at 30 FPS; VSync off with a 60 FPS cap
+  - backgrounds off
+  - FPS counter on
+  - Change any of them in Settings > Graphics, or in `~/.local/share/yarg/settings.json`, with YARG closed.
   - `ON_QUIT`: `poweroff` or `restart`.
 - `/etc/rockband-kiosk/bridge.conf`: instrument bridge options (see below).
 
@@ -227,7 +235,7 @@ It recognises Xbox 360 instruments by the device type stored in their USB descri
 | Game | YARG v0.15.0, the official Linux x86_64 release, pinned by checksum | Full band with vocals and harmonies; reads Rock Band song files as they are |
 | x86 emulation | Box64, built from source for the Pi 5 | YARG has no ARM build ([YARG#1269](https://github.com/YARC-Official/YARG/issues/1269)) |
 | Kernel | `kernel8.img` (4K memory pages) | Box64 doesn't run on the Pi 5's default 16K-page kernel |
-| Display | `cage` kiosk compositor with Xwayland | One full-screen app, no desktop |
+| Display | `cage` kiosk compositor with Xwayland, OpenGL renderer at 1080p, transparent cursor theme | One full-screen app, no desktop, no mouse pointer on the TV |
 | Audio | PipeWire | HDMI output and USB microphones at the same time |
 | Drivers | `xone` (Xbox One/Series), `xpad-noone` (Xbox 360), built with DKMS | `xpad-noone` keeps Xbox 360 support while `xone` takes Xbox One devices; DKMS rebuilds both on kernel updates |
 | Song share | Samba share `songs` | Copy songs from any OS over the network |
@@ -280,7 +288,7 @@ external/                     submodules: pi-gen, box64, xone, xpad-noone
 | `external/pi-gen` | [RPi-Distro/pi-gen](https://github.com/RPi-Distro/pi-gen), `arm64` branch | `2026-09-15-raspios-trixie-arm64` + `patches/pi-gen/` |
 | `external/box64` | [ptitSeb/box64](https://github.com/ptitSeb/box64) | master, 2026-10-04 |
 | `external/xone` | [dlundqvist/xone](https://github.com/dlundqvist/xone) | `v0.5.8` + `patches/xone/` |
-| `external/xpad-noone` | [Jan200101/xpad-noone](https://github.com/Jan200101/xpad-noone) | kernel 7.0.12 sync |
+| `external/xpad-noone` | [Jan200101/xpad-noone](https://github.com/Jan200101/xpad-noone) | kernel 7.0.12 sync + `patches/xpad-noone/` |
 
 The submodules are never edited directly. Changes live in `patches/<submodule>/` and are applied to a copy during the build:
 
@@ -289,6 +297,7 @@ The submodules are never edited directly. Changes live in `patches/<submodule>/`
 | `patches/pi-gen/0001-build-docker-accept-qemu-aarch64-static.patch` | Lets the build run on Fedora-based hosts, which ship `qemu-aarch64-static` instead of `qemu-aarch64` |
 | `patches/pi-gen/0002-ensure-next-loopdev-strip-lost-suffix.patch` | Fixes image export failing with `invalid minor device number '/dev/loop0 (lost)'` when the host creates a loop device after the build container started |
 | `patches/xone/0001-pdp-jaguar-use-fret-bitmasks-add-pickup-and-riffmaster-joystick.patch` | Reads the Riffmaster's frets correctly and adds its pickup switch and joystick |
+| `patches/xpad-noone/0001-drop-xbox-one-vendor-matches.patch` | Stops `xpad-noone` from claiming Xbox One devices (such as the Riffmaster dongle) by vendor, so `xone` drives them |
 
 **Running the tests** (Linux host):
 ```bash
@@ -322,7 +331,7 @@ STAGE_ONLY=1 scripts/build-image.sh     # prepares the build without running it
 
 ## License
 
-The code in this repo is MIT licensed; see [LICENSE](LICENSE). The patches in `patches/xone/` are GPL-2.0-or-later, because they modify `xone`. The patches in `patches/pi-gen/` follow pi-gen's BSD 3-Clause license.
+The code in this repo is MIT licensed; see [LICENSE](LICENSE). The patches in `patches/xone/` are GPL-2.0-or-later and those in `patches/xpad-noone/` are GPL-2.0, because they modify those drivers. The patches in `patches/pi-gen/` follow pi-gen's BSD 3-Clause license.
 
 Third-party software keeps its own license:
 
