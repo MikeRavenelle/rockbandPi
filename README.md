@@ -244,7 +244,8 @@ The flash scripts put SONGS 16 GB after the start of the system partition, and t
 |---|---|---|
 | `This shell is inside a container (toolbox/distrobox)` or `cannot open sd-bus: No such file or directory` | The build was started inside a toolbox or distrobox. It starts its own privileged container and can't run nested. | Open a terminal on the host (no 📦 in the prompt) and run it there. |
 | `qemu-aarch64 not found (please install qemu-user-binfmt)` | The host has no ARM64 emulation registered. | Debian/Ubuntu: `sudo apt install qemu-user-static binfmt-support`. Fedora: `sudo dnf install qemu-user-static`. Fedora hosts name the binary `qemu-aarch64-static`; `patches/pi-gen/` makes pi-gen accept that name. |
-| `Container pigen_work already exists` | A previous build stopped partway. | Resume with `CONTINUE=1 scripts/build-image.sh`, or start over after `sudo podman rm -v pigen_work`. |
+| `Container pigen_work already exists` | A previous build stopped partway. | Resume with `CONTINUE=1 scripts/build-image.sh`. Add `SKIP_STAGES="stage0 stage1 stage2 stage-rockband"` to reuse every stage that finished and redo only the image export. To start over instead: `sudo podman rm -v pigen_work`. |
+| `mknod: invalid minor device number '/dev/loop0 (lost)'` | pi-gen bug in older checkouts: the host created a loop device after the build container started. | Fixed by `patches/pi-gen/0002`. If a build already got this far, resume with only the export: `CONTINUE=1 SKIP_STAGES="stage0 stage1 stage2 stage-rockband" scripts/build-image.sh` |
 | `This checkout has Windows (CRLF) line endings` | The repo was cloned on Windows with automatic line-ending conversion. | Clone inside WSL, or run `git config --global core.autocrlf false` and clone again. |
 | A failure in a later stage | pi-gen log | `build/pi-gen/deploy/build-docker.log` and `build/pi-gen/work/*/build.log` show the failing step. |
 
@@ -279,6 +280,7 @@ The submodules are never edited directly. Changes live in `patches/<submodule>/`
 | Patch | What it does |
 |---|---|
 | `patches/pi-gen/0001-build-docker-accept-qemu-aarch64-static.patch` | Lets the build run on Fedora-based hosts, which ship `qemu-aarch64-static` instead of `qemu-aarch64` |
+| `patches/pi-gen/0002-ensure-next-loopdev-strip-lost-suffix.patch` | Fixes image export failing with `invalid minor device number '/dev/loop0 (lost)'` when the host creates a loop device after the build container started |
 | `patches/xone/0001-pdp-jaguar-use-fret-bitmasks-add-pickup-and-riffmaster-joystick.patch` | Reads the Riffmaster's frets correctly and adds its pickup switch and joystick |
 
 **Running the tests** (Linux host):

@@ -10,6 +10,8 @@
 #         Podman machine.
 # Env:    STAGE_ONLY=1  prepare build/pi-gen without running the build
 #         CONTINUE=1    resume a failed build in the existing container
+#         SKIP_STAGES   with CONTINUE=1, stages that already finished, e.g.
+#                       "stage0 stage1 stage2 stage-rockband" to only redo the export
 #         DOCKER=...    container command (default: "sudo podman" on Linux if
 #                       Podman is installed, otherwise pi-gen picks docker)
 set -euo pipefail
@@ -71,6 +73,14 @@ for src in xone xpad-noone; do
 done
 rsync -a --delete "$ROOT/rootfs/" "$STAGE/04-kiosk/files/rootfs/"
 rsync -a --delete --exclude __pycache__ --exclude tests "$ROOT/bridge/" "$STAGE/04-kiosk/files/bridge/"
+
+# Resuming: stages listed in SKIP_STAGES reuse what the previous run built
+# (pi-gen still exports their image)
+for s in ${SKIP_STAGES:-}; do
+	[ -d "$BUILD/$s" ] || { echo "SKIP_STAGES: no stage named $s" >&2; exit 1; }
+	echo "    skipping $s (reusing the previous build)"
+	touch "$BUILD/$s/SKIP"
+done
 
 # Checkouts on Windows filesystems can lose execute bits; pi-gen skips
 # stage scripts that aren't executable

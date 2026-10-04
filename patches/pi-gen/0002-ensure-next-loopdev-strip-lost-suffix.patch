@@ -1,0 +1,21 @@
+From: rockbandPi
+Subject: [PATCH] ensure_next_loopdev: handle "(lost)" from losetup -f
+
+When the host creates a loop device after the build container started,
+the container's /dev has no node for it and `losetup -f` prints
+"/dev/loop0 (lost)". The suffix ended up in the mknod arguments
+("invalid minor device number") and losetup kept failing. Keep only the
+device path so the missing node gets created.
+---
+diff --git a/scripts/common b/scripts/common
+--- a/scripts/common
++++ b/scripts/common
+@@ -115,7 +115,7 @@ export -f update_issue
+
+ ensure_next_loopdev() {
+ 	local loopdev
+-	loopdev="$(losetup -f)"
++	loopdev="$(losetup -f | cut -d' ' -f1)"
+ 	loopmaj="$(echo "$loopdev" | sed -E 's/.*[^0-9]*?([0-9]+)$/\1/')"
+ 	[[ -b "$loopdev" ]] || mknod "$loopdev" b 7 "$loopmaj"
+ }
