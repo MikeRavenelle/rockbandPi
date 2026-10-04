@@ -1,0 +1,3 @@
+# From YARG's README: let the logged-in user open HID devices.
+# Must sort before 73-seat-late.rules.
+KERNEL=="hidraw*", TAG+="uaccess"

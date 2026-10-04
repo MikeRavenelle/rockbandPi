@@ -1,0 +1,13 @@
+[Unit]
+Description=Finish the SD card layout and mount the SONGS partition (first boot)
+After=local-fs.target systemd-udev-settle.service
+Before=getty@tty1.service smbd.service rb-bridge.service
+ConditionPathExists=!/var/lib/rockband-kiosk/partitions-done
+
+[Service]
+Type=oneshot
+ExecStart=/opt/rockband-kiosk/setup-partitions.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

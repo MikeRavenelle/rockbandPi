@@ -1,0 +1,27 @@
+# Copy to config/kiosk.conf and edit. config/kiosk.conf is git-ignored.
+
+# --- System ------------------------------------------------------------------
+HOSTNAME=rockband
+KIOSK_USER=rockband
+# SSH is always enabled: ssh <KIOSK_USER>@<HOSTNAME>.local
+# This password is used for SSH, the console, sudo and the "songs" network
+# share. Change it.
+KIOSK_PASSWORD=rockband
+# Optional SSH public key for the kiosk user, e.g. "ssh-ed25519 AAAA... me@pc"
+SSH_PUBKEY=""
+
+LOCALE=en_US.UTF-8
+TIMEZONE=America/New_York
+KEYBOARD_LAYOUT="English (US)"
+KEYBOARD_KEYMAP=us
+# Two-letter country code for Wi-Fi regulatory settings
+WIFI_COUNTRY=US
+
+# --- Network (optional; wired Ethernet works without this) --------------------
+WIFI_SSID=""
+WIFI_PSK=""
+
+# --- YARG ----------------------------------------------------------------------
+# Pinned release and its SHA-256 (from the downloaded Linux-x86_64 zip)
+YARG_VERSION=v0.15.0
+YARG_SHA256=a13bf5372096a920b6de98c7be299c864df6673b85d4c552f13fb2ea611917ca

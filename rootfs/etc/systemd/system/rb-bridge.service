@@ -1,0 +1,11 @@
+[Unit]
+Description=Rock Band instrument bridge (evdev -> HID for YARG)
+After=systemd-udevd.service systemd-modules-load.service
+
+[Service]
+ExecStart=/opt/rockband-kiosk/bridge/rb-bridge
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

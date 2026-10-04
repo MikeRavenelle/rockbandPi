@@ -1,0 +1,13 @@
+[submodule "external/pi-gen"]
+	path = external/pi-gen
+	url = https://github.com/RPi-Distro/pi-gen
+	branch = arm64
+[submodule "external/box64"]
+	path = external/box64
+	url = https://github.com/ptitSeb/box64
+[submodule "external/xone"]
+	path = external/xone
+	url = https://github.com/dlundqvist/xone
+[submodule "external/xpad-noone"]
+	path = external/xpad-noone
+	url = https://github.com/Jan200101/xpad-noone

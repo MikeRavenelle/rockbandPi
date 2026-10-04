@@ -1,0 +1,2 @@
+# The kiosk user is in the input group; covers sessions where uaccess doesn't apply
+KERNEL=="hidraw*", GROUP="input", MODE="0660"

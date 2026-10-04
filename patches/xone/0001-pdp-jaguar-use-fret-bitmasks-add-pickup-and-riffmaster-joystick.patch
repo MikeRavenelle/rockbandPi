@@ -1,0 +1,150 @@
+From: rockband-kiosk
+Subject: [PATCH] pdp_jaguar: fret bitmasks, pickup switch, Riffmaster joystick
+
+Use the dedicated upper/lower fret bitmasks instead of the shared flag
+bits, report the 5-notch pickup switch on ABS_RX, and expose the
+Riffmaster joystick (ABS_HAT1X/ABS_HAT1Y) and its click (BTN_THUMBL).
+Report layout from PlasticBand "Xbox One Rock Band Guitars".
+---
+diff --git a/driver/pdp_jaguar.c b/driver/pdp_jaguar.c
+--- a/driver/pdp_jaguar.c	2026-10-04 11:37:04.078614431 -0500
++++ b/driver/pdp_jaguar.c	2026-10-04 11:37:26.800355214 -0500
+@@ -35,6 +35,34 @@
+ 	u8 whammy;
+ } __packed;
+ 
++/*
++ * Full input report: pickup switch and the separate upper/lower fret
++ * bitmasks follow the base report. The Riffmaster extends it further with
++ * an analog joystick. Reference: PlasticBand "Xbox One Rock Band Guitars".
++ */
++struct gip_jaguar_pkt_input_ext {
++	struct gip_jaguar_pkt_input base;
++	u8 pickup;
++	u8 frets_upper;
++	u8 frets_lower;
++	u8 autocal_light;
++	__le16 autocal_audio;
++} __packed;
++
++struct gip_riffmaster_pkt_input {
++	struct gip_jaguar_pkt_input_ext ext;
++	__le16 joystick_x;
++	__le16 joystick_y;
++} __packed;
++
++enum gip_jaguar_fret_mask {
++	GIP_JA_MASK_GREEN = BIT(0),
++	GIP_JA_MASK_RED = BIT(1),
++	GIP_JA_MASK_YELLOW = BIT(2),
++	GIP_JA_MASK_BLUE = BIT(3),
++	GIP_JA_MASK_ORANGE = BIT(4),
++};
++
+ struct gip_jaguar {
+ 	struct gip_client *client;
+ 	struct gip_battery battery;
+@@ -65,6 +93,14 @@
+ 	input_set_abs_params(dev, ABS_HAT0X, -1, 1, 0, 0);
+ 	input_set_abs_params(dev, ABS_HAT0Y, -1, 1, 0, 0);
+ 
++	/* Pickup switch notch (0-4) */
++	input_set_abs_params(dev, ABS_RX, 0, 4, 0, 0);
++
++	/* Riffmaster joystick and joystick click */
++	input_set_capability(dev, EV_KEY, BTN_THUMBL);
++	input_set_abs_params(dev, ABS_HAT1X, -32768, 32767, 0, 4096);
++	input_set_abs_params(dev, ABS_HAT1Y, -32768, 32767, 0, 4096);
++
+ 	err = input_register_device(dev);
+ 	if (err)
+ 		dev_err(&guitar->client->dev, "%s: register failed: %d\n",
+@@ -102,6 +138,20 @@
+ 	return 0;
+ }
+ 
++static void gip_jaguar_report_frets(struct input_dev *dev, u8 upper, u8 lower)
++{
++	input_report_key(dev, BTN_TRIGGER_HAPPY1, upper & GIP_JA_MASK_GREEN);
++	input_report_key(dev, BTN_TRIGGER_HAPPY2, upper & GIP_JA_MASK_RED);
++	input_report_key(dev, BTN_TRIGGER_HAPPY3, upper & GIP_JA_MASK_YELLOW);
++	input_report_key(dev, BTN_TRIGGER_HAPPY4, upper & GIP_JA_MASK_BLUE);
++	input_report_key(dev, BTN_TRIGGER_HAPPY5, upper & GIP_JA_MASK_ORANGE);
++	input_report_key(dev, BTN_TRIGGER_HAPPY6, lower & GIP_JA_MASK_GREEN);
++	input_report_key(dev, BTN_TRIGGER_HAPPY7, lower & GIP_JA_MASK_RED);
++	input_report_key(dev, BTN_TRIGGER_HAPPY8, lower & GIP_JA_MASK_YELLOW);
++	input_report_key(dev, BTN_TRIGGER_HAPPY9, lower & GIP_JA_MASK_BLUE);
++	input_report_key(dev, BTN_TRIGGER_HAPPY10, lower & GIP_JA_MASK_ORANGE);
++}
++
+ static int gip_jaguar_op_input(struct gip_client *client, void *data, u32 len)
+ {
+ 	struct gip_jaguar *guitar = dev_get_drvdata(&client->dev);
+@@ -118,26 +168,47 @@
+ 
+ 	input_report_key(dev, BTN_START, buttons & GIP_JA_BTN_MENU);
+ 	input_report_key(dev, BTN_SELECT, buttons & GIP_JA_BTN_VIEW);
+-	input_report_key(dev, BTN_TRIGGER_HAPPY1,
+-			 (buttons & GIP_JA_FRET_GREEN) && !lower);
+-	input_report_key(dev, BTN_TRIGGER_HAPPY2,
+-			 (buttons & GIP_JA_FRET_RED) && !lower);
+-	input_report_key(dev, BTN_TRIGGER_HAPPY3,
+-			 (buttons & GIP_JA_FRET_YELLOW) && !lower);
+-	input_report_key(dev, BTN_TRIGGER_HAPPY4,
+-			 (buttons & GIP_JA_FRET_BLUE) && !lower);
+-	input_report_key(dev, BTN_TRIGGER_HAPPY5,
+-			 (buttons & GIP_JA_FRET_ORANGE) && !lower);
+-	input_report_key(dev, BTN_TRIGGER_HAPPY6,
+-			 (buttons & GIP_JA_FRET_GREEN) && lower);
+-	input_report_key(dev, BTN_TRIGGER_HAPPY7,
+-			 (buttons & GIP_JA_FRET_RED) && lower);
+-	input_report_key(dev, BTN_TRIGGER_HAPPY8,
+-			 (buttons & GIP_JA_FRET_YELLOW) && lower);
+-	input_report_key(dev, BTN_TRIGGER_HAPPY9,
+-			 (buttons & GIP_JA_FRET_BLUE) && lower);
+-	input_report_key(dev, BTN_TRIGGER_HAPPY10,
+-			 (buttons & GIP_JA_FRET_ORANGE) && lower);
++
++	if (len >= sizeof(struct gip_jaguar_pkt_input_ext)) {
++		struct gip_jaguar_pkt_input_ext *ext = data;
++
++		/*
++		 * Use the dedicated fret bitmasks: the flag bits can't tell
++		 * upper and lower frets apart when both are held, and the
++		 * Riffmaster reuses the solo flag for its joystick click.
++		 */
++		gip_jaguar_report_frets(dev, ext->frets_upper,
++					ext->frets_lower);
++		input_report_abs(dev, ABS_RX, min(ext->pickup >> 4, 4));
++		input_report_key(dev, BTN_THUMBL, lower && !ext->frets_lower);
++	} else {
++		u8 frets = 0;
++
++		if (buttons & GIP_JA_FRET_GREEN)
++			frets |= GIP_JA_MASK_GREEN;
++		if (buttons & GIP_JA_FRET_RED)
++			frets |= GIP_JA_MASK_RED;
++		if (buttons & GIP_JA_FRET_YELLOW)
++			frets |= GIP_JA_MASK_YELLOW;
++		if (buttons & GIP_JA_FRET_BLUE)
++			frets |= GIP_JA_MASK_BLUE;
++		if (buttons & GIP_JA_FRET_ORANGE)
++			frets |= GIP_JA_MASK_ORANGE;
++
++		gip_jaguar_report_frets(dev, lower ? 0 : frets,
++					lower ? frets : 0);
++	}
++
++	if (len >= sizeof(struct gip_riffmaster_pkt_input)) {
++		struct gip_riffmaster_pkt_input *rm = data;
++
++		input_report_abs(dev, ABS_HAT1X,
++				 (s16)le16_to_cpu(rm->joystick_x));
++		/* Device reports up as positive; evdev convention is down */
++		input_report_abs(dev, ABS_HAT1Y,
++				 -1 - (s16)le16_to_cpu(rm->joystick_y));
++	}
++
+ 	input_report_abs(dev, ABS_Y, pkt->whammy);
+ 	input_report_abs(dev, ABS_Z, pkt->tilt);
+ 	input_report_abs(dev, ABS_HAT0X, !!(buttons & GIP_JA_BTN_DPAD_R) -

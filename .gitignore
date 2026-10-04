@@ -1,0 +1,14 @@
+# Song library: the folder stays in the repo (with its README) but the songs never do
+/songs/*
+!/songs/README.md
+
+# Build outputs
+/build/
+/deploy/
+*.img
+*.img.xz
+*.img.zst
+config/kiosk.conf
+__pycache__/
+.claude/
+
