@@ -1,0 +1,19 @@
+From: rockbandPi
+Subject: [PATCH] build-docker: accept qemu-aarch64-static on the host
+
+Fedora-based hosts (Fedora, Bazzite, Silverblue) ship qemu-aarch64-static
+and register it with binfmt_misc, but have no plain qemu-aarch64. Accept
+either name.
+---
+diff --git a/build-docker.sh b/build-docker.sh
+--- a/build-docker.sh
++++ b/build-docker.sh
+@@ -107,7 +107,7 @@ esac
+
+ # Check if qemu-aarch64 and /proc/sys/fs/binfmt_misc are present
+ if [[ "${binfmt_misc_required}" == "1" ]]; then
+-  if ! qemu_arm=$(which qemu-aarch64) ; then
++  if ! qemu_arm=$(which qemu-aarch64 2>/dev/null || which qemu-aarch64-static 2>/dev/null) ; then
+     echo "qemu-aarch64 not found (please install qemu-user-binfmt)"
+     exit 1
+   fi

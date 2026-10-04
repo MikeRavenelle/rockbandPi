@@ -20,6 +20,11 @@ CONF="${1:-$ROOT/config/kiosk.conf}"
 	echo "Missing $CONF. Start from: cp config/kiosk.conf.example config/kiosk.conf" >&2
 	exit 1
 }
+if [ -e /run/.containerenv ] || [ -e /run/.toolboxenv ] || [ -n "${DISTROBOX_ENTER_PATH:-}" ]; then
+	echo "This shell is inside a container (toolbox/distrobox). The build starts its own" >&2
+	echo "privileged container and can't run nested. Run it from a host terminal instead." >&2
+	exit 1
+fi
 if grep -q $'\r' "$ROOT/scripts/build-image.sh" "$CONF"; then
 	echo "This checkout has Windows (CRLF) line endings. Clone the repo inside WSL," >&2
 	echo "or run: git config --global core.autocrlf false, then re-clone." >&2
@@ -41,6 +46,12 @@ fi
 mkdir -p "$BUILD"
 rsync -a --delete --exclude .git --exclude work --exclude deploy \
 	"$ROOT/external/pi-gen/" "$BUILD/"
+for p in "$ROOT"/patches/pi-gen/*.patch; do
+	[ -e "$p" ] || continue
+	echo "    pi-gen: $(basename "$p")"
+	# build/ lives inside this repo; stop git from treating it as part of it
+	GIT_CEILING_DIRECTORIES="$ROOT/build" git -C "$BUILD" apply "$p"
+done
 # Only export our image, not the intermediate Lite image
 rm -f "$BUILD/stage2/EXPORT_IMAGE"
 rsync -a --delete "$ROOT/image/stage-rockband/" "$STAGE/"

@@ -17,8 +17,8 @@ You bring the songs. Nothing in this repo contains or downloads song data.
 - [Remote access and debugging](#remote-access-and-debugging)
 - [Controllers](#controllers)
 - [How it works](#how-it-works)
+- [Troubleshooting the build](#troubleshooting-the-build)
 - [Repository layout](#repository-layout)
-- [Building on GitHub Actions](#building-on-github-actions)
 - [Status](#status)
 - [License](#license)
 
@@ -49,6 +49,7 @@ The folder is part of the repo, but everything in it except its README is ignore
    sudo apt install git rsync podman qemu-user-static binfmt-support exfatprogs
    ```
    - **Fedora:** `sudo dnf install git rsync podman qemu-user-static exfatprogs`
+   - **Fedora Atomic desktops (Bazzite, Silverblue, Kinoite):** nothing to install; the host already includes all of these.
    - **Docker:** works instead of Podman.
 2. Clone the repo with its submodules and create your config:
    ```bash
@@ -58,7 +59,7 @@ The folder is part of the repo, but everything in it except its README is ignore
    ```
    Edit `config/kiosk.conf`: at least change the password. You can also add Wi-Fi and your SSH key there.
 3. Copy your songs into `songs/`.
-4. Build the image. This asks for your sudo password, because the container needs root to create disk images.
+4. Build the image. Run it from a host terminal, not inside a toolbox or distrobox: the build starts its own container and can't run nested. It asks for your sudo password, because the container needs root to create disk images.
    ```bash
    scripts/build-image.sh
    ```
@@ -237,6 +238,16 @@ SONGS is exFAT so Linux, macOS and Windows can all write to it. Its contents app
 
 The flash scripts put SONGS 16 GB after the start of the system partition, and the Pi grows the system partition into that space on first boot. If a card is written with plain Raspberry Pi Imager instead of the scripts, the Pi creates SONGS itself on first boot.
 
+## Troubleshooting the build
+
+| Error | Cause | Fix |
+|---|---|---|
+| `This shell is inside a container (toolbox/distrobox)` or `cannot open sd-bus: No such file or directory` | The build was started inside a toolbox or distrobox. It starts its own privileged container and can't run nested. | Open a terminal on the host (no 📦 in the prompt) and run it there. |
+| `qemu-aarch64 not found (please install qemu-user-binfmt)` | The host has no ARM64 emulation registered. | Debian/Ubuntu: `sudo apt install qemu-user-static binfmt-support`. Fedora: `sudo dnf install qemu-user-static`. Fedora hosts name the binary `qemu-aarch64-static`; `patches/pi-gen/` makes pi-gen accept that name. |
+| `Container pigen_work already exists` | A previous build stopped partway. | Resume with `CONTINUE=1 scripts/build-image.sh`, or start over after `sudo podman rm -v pigen_work`. |
+| `This checkout has Windows (CRLF) line endings` | The repo was cloned on Windows with automatic line-ending conversion. | Clone inside WSL, or run `git config --global core.autocrlf false` and clone again. |
+| A failure in a later stage | pi-gen log | `build/pi-gen/deploy/build-docker.log` and `build/pi-gen/work/*/build.log` show the failing step. |
+
 ## Repository layout
 
 ```
@@ -252,17 +263,23 @@ rootfs/                       files copied into the image as-is (systemd, udev, 
 bridge/                       rb-bridge instrument bridge (Python) and its tests
 patches/                      changes to submodules, applied at build time
 tests/                        host-side tests
+docs/                         design notes and plans
 external/                     submodules: pi-gen, box64, xone, xpad-noone
 ```
 
 | Submodule | Source | Pinned at |
 |---|---|---|
-| `external/pi-gen` | [RPi-Distro/pi-gen](https://github.com/RPi-Distro/pi-gen), `arm64` branch | `2026-09-15-raspios-trixie-arm64` |
+| `external/pi-gen` | [RPi-Distro/pi-gen](https://github.com/RPi-Distro/pi-gen), `arm64` branch | `2026-09-15-raspios-trixie-arm64` + `patches/pi-gen/` |
 | `external/box64` | [ptitSeb/box64](https://github.com/ptitSeb/box64) | master, 2026-10-04 |
-| `external/xone` | [dlundqvist/xone](https://github.com/dlundqvist/xone) | `v0.5.8` |
+| `external/xone` | [dlundqvist/xone](https://github.com/dlundqvist/xone) | `v0.5.8` + `patches/xone/` |
 | `external/xpad-noone` | [Jan200101/xpad-noone](https://github.com/Jan200101/xpad-noone) | kernel 7.0.12 sync |
 
-The submodules are never edited directly. Changes live in `patches/<submodule>/` and are applied to a copy during the build. The current patch makes `xone` read the Riffmaster's frets correctly and adds its pickup switch and joystick.
+The submodules are never edited directly. Changes live in `patches/<submodule>/` and are applied to a copy during the build:
+
+| Patch | What it does |
+|---|---|
+| `patches/pi-gen/0001-build-docker-accept-qemu-aarch64-static.patch` | Lets the build run on Fedora-based hosts, which ship `qemu-aarch64-static` instead of `qemu-aarch64` |
+| `patches/xone/0001-pdp-jaguar-use-fret-bitmasks-add-pickup-and-riffmaster-joystick.patch` | Reads the Riffmaster's frets correctly and adds its pickup switch and joystick |
 
 **Running the tests** (Linux host):
 ```bash
@@ -272,19 +289,6 @@ STAGE_ONLY=1 scripts/build-image.sh     # prepares the build without running it
 ```
 
 **Updating YARG.** Set `YARG_VERSION` and `YARG_SHA256` in `config/kiosk.conf` and rebuild. Get the checksum with `sha256sum` on the downloaded `Linux-x86_64.zip`.
-
-## Building on GitHub Actions
-
-**Building works:**
-- The build fits GitHub's free hosted runners: under the 6 hour job limit, and within the disk space once the preinstalled toolchains are cleared.
-- The free `ubuntu-24.04-arm` runners avoid ARM emulation and are much faster.
-- Building is a good way to catch breakage when a submodule or YARG is updated.
-
-**Publishing the finished image is the problem.** The image contains software this repo can't relicense or redistribute:
-- the Xbox Wireless Adapter firmware, downloaded from Microsoft under Microsoft's terms
-- YARG's bundled third-party audio libraries (BASS) and Unity runtime
-
-Keep CI images as private, short-lived workflow artifacts rather than public releases. Everyone else builds their own image from the repo, which is what this setup is designed for.
 
 ## Status
 
@@ -301,9 +305,15 @@ Keep CI images as private, short-lived workflow artifacts rather than public rel
 - each physical instrument end to end
 - the macOS and Windows scripts on real Macs and PCs
 
+**Performance.** YARG has no ARM64 build, so it runs under x86_64 emulation, and that's the biggest open question. [docs/yarg-native-arm64.md](docs/yarg-native-arm64.md) covers:
+- how to measure performance
+- tuning
+- an ahead-of-time compiled (IL2CPP) build to speed up emulation
+- what a native ARM64 build needs, and what currently blocks it on Unity's side
+
 ## License
 
-The code in this repo is MIT licensed; see [LICENSE](LICENSE). The patches in `patches/xone/` are GPL-2.0-or-later, because they modify `xone`.
+The code in this repo is MIT licensed; see [LICENSE](LICENSE). The patches in `patches/xone/` are GPL-2.0-or-later, because they modify `xone`. The patches in `patches/pi-gen/` follow pi-gen's BSD 3-Clause license.
 
 Third-party software keeps its own license:
 
@@ -316,5 +326,7 @@ Third-party software keeps its own license:
 | YARG | LGPL-3.0 (bundles third-party libraries under their own terms) | downloaded during the build |
 | Raspberry Pi OS / Debian packages | various free software licenses | installed during the build |
 | Xbox Wireless Adapter firmware | Microsoft terms of use | downloaded from Microsoft during the build |
+
+Built images contain the Microsoft firmware and YARG's bundled third-party libraries, so don't publish them. Each user builds their own image from this repo.
 
 This project is not affiliated with Harmonix, MTV Games, Mad Catz, PDP, ION, Microsoft or the YARG team. Rock Band is a trademark of Harmonix Music Systems. You need your own legally obtained song files.

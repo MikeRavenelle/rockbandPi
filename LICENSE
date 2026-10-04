@@ -22,9 +22,12 @@ SOFTWARE.
 
 ---------------------------------------------------------------------------
 
-Exception: the files in patches/xone/ modify xone, which is licensed under
-the GNU General Public License, version 2 or later. Those patches are
-licensed under GPL-2.0-or-later as well, not MIT.
+Exceptions:
+- The files in patches/xone/ modify xone, which is licensed under the GNU
+  General Public License, version 2 or later. Those patches are licensed
+  under GPL-2.0-or-later as well, not MIT.
+- The files in patches/pi-gen/ modify pi-gen and are licensed under pi-gen's
+  BSD 3-Clause license.
 
 Third-party components (git submodules in external/, and software the build
 downloads) keep their own licenses. See the "License" section of README.md.
