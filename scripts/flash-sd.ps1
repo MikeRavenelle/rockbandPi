@@ -12,17 +12,44 @@
   Run from an elevated PowerShell (Run as Administrator).
 
 .EXAMPLE
-  Get-Disk                                   # find the SD card's disk number
+  .\scripts\flash-sd.ps1                     # pick the card from a list
   .\scripts\flash-sd.ps1 -DiskNumber 2
-  .\scripts\flash-sd.ps1 -DiskNumber 2 -Image deploy\rockbandPi.img -Songs D:\RockBand
+  .\scripts\flash-sd.ps1 -Image deploy\rockbandPi.img -Songs D:\RockBand
 #>
 #Requires -RunAsAdministrator
 param(
-    [Parameter(Mandatory = $true)][int]$DiskNumber,
+    [int]$DiskNumber = -1,
     [string]$Image = "",
     [string]$Songs = (Join-Path $PSScriptRoot "..\songs")
 )
 $ErrorActionPreference = "Stop"
+
+if ($DiskNumber -lt 0) {
+    # Removable drives only (SD, USB); never system or boot disks or empty card-reader slots
+    $candidates = @(Get-Disk | Where-Object {
+        $_.BusType -in @("USB", "SD", "MMC") -and -not $_.IsSystem -and -not $_.IsBoot -and $_.Size -gt 0
+    } | Sort-Object Number)
+    if ($candidates.Count -eq 0) { throw "No SD card or USB drive found. Insert the card and try again." }
+
+    Write-Host "Removable drives:"
+    for ($i = 0; $i -lt $candidates.Count; $i++) {
+        $d = $candidates[$i]
+        $labels = (Get-Partition -DiskNumber $d.Number -ErrorAction SilentlyContinue |
+            Get-Volume -ErrorAction SilentlyContinue |
+            Where-Object FileSystemLabel | ForEach-Object FileSystemLabel) -join ","
+        $line = "  {0}) disk {1}  {2} GB  {3}  {4}" -f ($i + 1), $d.Number, [math]::Round($d.Size / 1GB, 1), $d.BusType, $d.FriendlyName
+        if ($labels) { $line += "  [partitions: $labels]" }
+        Write-Host $line
+    }
+    Write-Host ""
+    $choice = Read-Host "Flash which drive? [1-$($candidates.Count)]"
+    $n = 0
+    if (-not [int]::TryParse($choice, [ref]$n) -or $n -lt 1 -or $n -gt $candidates.Count) {
+        Write-Host "Aborted."
+        exit 1
+    }
+    $DiskNumber = $candidates[$n - 1].Number
+}
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if (-not $Image) {

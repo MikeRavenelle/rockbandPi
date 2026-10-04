@@ -3,23 +3,99 @@
 # and copies ./songs onto it, all in one pass. Linux and macOS
 # (Windows: scripts/flash-sd.ps1).
 #
-#   Linux:  sudo scripts/flash-sd.sh /dev/sdX   [image] [songs-dir]
-#   macOS:  sudo scripts/flash-sd.sh /dev/diskN [image] [songs-dir]
+#   sudo scripts/flash-sd.sh                      # pick the card from a list
+#   sudo scripts/flash-sd.sh /dev/sdX   [image] [songs-dir]     (Linux)
+#   sudo scripts/flash-sd.sh /dev/diskN [image] [songs-dir]     (macOS)
 #
 # image defaults to the newest deploy/*.img (.img.xz / .img.zst also work);
-# songs-dir defaults to ./songs. Everything on the card is erased.
+# songs-dir defaults to ./songs. Pass "" as the device to pick from the list
+# while still giving an image or songs folder. Everything on the card is erased.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib/songs-partition.sh
 . "$ROOT/scripts/lib/songs-partition.sh"
 
-DEV="${1:?usage: sudo $0 <device> [image] [songs-dir]}"
+DEV="${1:-}"
 IMG="${2:-$(ls -t "$ROOT"/deploy/*.img* 2>/dev/null | head -1 || true)}"
 SONGS="${3:-$ROOT/songs}"
 OS="$(uname -s)"
 
 [ "$(id -u)" -eq 0 ] || { echo "Run with sudo." >&2; exit 1; }
+
+# True if anything on the disk (partitions, encrypted volumes...) is mounted
+# outside the removable-media folders, i.e. it's part of the running system.
+# Works on layouts where / isn't a plain partition (composefs, btrfs, LUKS).
+is_system_disk() {
+	local dev target
+	while read -r dev; do
+		while read -r target; do
+			case "$target" in
+				''|/run/media/*|/media/*|/mnt/*) ;;
+				*) return 0 ;;
+			esac
+		done < <(findmnt -nro TARGET -S "$dev" 2>/dev/null || true)
+	done < <(lsblk -nrpo NAME "$1" 2>/dev/null || true)
+	return 1
+}
+
+# Lists removable drives (SD cards, USB) and lets the user pick one by number.
+# Internal disks and the disk holding the running system are never offered.
+choose_device() {
+	local names=() descs=() name desc i choice
+	if [ "$OS" = "Darwin" ]; then
+		while read -r name; do
+			desc="$(diskutil info "$name" | awk -F': *' '
+				/Disk Size/ {split($2, s, " ("); size = s[1]}
+				/Media Name/ {model = $2}
+				END {print size "  " model}')"
+			names+=("$name"); descs+=("$desc")
+		done < <(diskutil list external physical | awk '/^\/dev\/disk[0-9]+/ {print $1}')
+	else
+		local line NAME SIZE TRAN RM MODEL labels
+		while read -r line; do
+			# lsblk -P prints KEY="value" pairs, so empty columns don't shift
+			NAME="" SIZE="" TRAN="" RM="" MODEL=""
+			eval "$line"
+			[ "$RM" = "1" ] || [ "$TRAN" = "usb" ] || [ "$TRAN" = "mmc" ] || continue
+			! is_system_disk "$NAME" || continue
+			# Empty card-reader slots show up as 0-byte disks
+			[ "$SIZE" != "0B" ] || continue
+			desc="$SIZE  ${TRAN:-?}  $MODEL"
+			labels="$(lsblk -nro LABEL "$NAME" | grep -v '^$' | paste -sd, - || true)"
+			[ -z "$labels" ] || desc="$desc  [partitions: $labels]"
+			names+=("$NAME"); descs+=("$desc")
+		done < <(lsblk -dnpP -o NAME,SIZE,TRAN,RM,MODEL -e 7,11)
+	fi
+
+	if [ "${#names[@]}" -eq 0 ]; then
+		echo "No SD card or USB drive found. Insert the card and try again." >&2
+		exit 1
+	fi
+	echo "Removable drives:"
+	for i in "${!names[@]}"; do
+		printf '  %d) %-14s %s\n' $(( i + 1 )) "${names[$i]}" "${descs[$i]}"
+	done
+	echo
+	read -r -p "Flash which drive? [1-${#names[@]}]: " choice
+	case "$choice" in
+		''|*[!0-9]*) echo "Aborted." >&2; exit 1 ;;
+	esac
+	if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#names[@]}" ]; then
+		echo "Aborted." >&2
+		exit 1
+	fi
+	DEV="${names[$(( choice - 1 ))]}"
+}
+
+if [ -z "$DEV" ]; then
+	choose_device
+fi
+# Accept "sde" / "disk4" as well as "/dev/sde" / "/dev/disk4"
+case "$DEV" in
+	/*) ;;
+	*) [ -e "/dev/$DEV" ] && DEV="/dev/$DEV" ;;
+esac
 [ -n "$IMG" ] && [ -f "$IMG" ] || { echo "No image found; run scripts/build-image.sh first." >&2; exit 1; }
 
 decompress() {
@@ -106,8 +182,8 @@ if [ -n "$(lsblk -no PKNAME "$DEV" 2>/dev/null | head -1)" ]; then
 	echo "$DEV is a partition; pass the whole disk (e.g. /dev/sdb, /dev/mmcblk0)." >&2
 	exit 1
 fi
-if lsblk -nro MOUNTPOINT "$DEV" | grep -qx '/'; then
-	echo "$DEV holds the running system. Refusing." >&2
+if is_system_disk "$DEV"; then
+	echo "$DEV is mounted as part of the running system. Refusing." >&2
 	exit 1
 fi
 command -v mkfs.exfat >/dev/null || { echo "mkfs.exfat not found; install exfatprogs." >&2; exit 1; }

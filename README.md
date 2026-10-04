@@ -64,11 +64,13 @@ The folder is part of the repo, but everything in it except its README is ignore
    scripts/build-image.sh
    ```
    The image ends up in `deploy/`.
-5. Insert the SD card, find it with `lsblk`, and flash it:
+5. Insert the SD card and flash it:
    ```bash
-   sudo scripts/flash-sd.sh /dev/sdX
+   sudo scripts/flash-sd.sh
    ```
-   This writes the image, creates the SONGS partition and copies `songs/` onto it in one pass. It asks you to type the device name before erasing anything.
+   - **Picking the card:** you get a numbered list of SD cards and USB drives, with size, model and current partition labels. Internal disks and the system disk are never listed. To skip the list, pass the device: `sudo scripts/flash-sd.sh /dev/sdX`.
+   - **What it does:** writes the image, creates the SONGS partition and copies `songs/` onto it in one pass.
+   - **Safety:** it asks you to type the device name before erasing anything.
 
 ## Setup on macOS
 
@@ -87,11 +89,13 @@ The folder is part of the repo, but everything in it except its README is ignore
    ```bash
    scripts/build-image.sh
    ```
-5. Insert the SD card, find it with `diskutil list external` (for example `/dev/disk4`), and flash it:
+5. Insert the SD card and flash it:
    ```bash
-   sudo scripts/flash-sd.sh /dev/disk4
+   sudo scripts/flash-sd.sh
    ```
-   This writes the image, creates the SONGS partition, formats it and copies `songs/` onto it. If macOS shows "The disk you inserted was not readable", click Ignore: that's the Linux system partition, which macOS can't read.
+   - **Picking the card:** you get a numbered list of external drives. To skip the list, pass the device: `sudo scripts/flash-sd.sh /dev/disk4`.
+   - **What it does:** writes the image, creates the SONGS partition, formats it and copies `songs/` onto it.
+   - **"Not readable" warning:** If macOS shows "The disk you inserted was not readable", click Ignore: that's the Linux system partition, which macOS can't read.
 
 ## Setup on Windows
 
@@ -115,11 +119,13 @@ The image builder needs Linux, so the build runs inside WSL. Flashing and copyin
    cd \\wsl$\Ubuntu\home\<you>\rockbandPi
    .\scripts\build-image.ps1
    ```
-5. Insert the SD card. In PowerShell **as Administrator**, find its disk number with `Get-Disk`, then flash it:
+5. Insert the SD card. In PowerShell **as Administrator**, flash it:
    ```powershell
-   .\scripts\flash-sd.ps1 -DiskNumber 2
+   .\scripts\flash-sd.ps1
    ```
-   This writes the image with Raspberry Pi Imager, creates and formats the SONGS partition, and copies the songs with robocopy. If Windows offers to format a drive afterwards, click Cancel: that's the Linux system partition.
+   - **Picking the card:** you get a numbered list of SD cards and USB drives. To skip the list, pass the disk number from `Get-Disk`: `.\scripts\flash-sd.ps1 -DiskNumber 2`.
+   - **What it does:** writes the image with Raspberry Pi Imager, creates and formats the SONGS partition, and copies the songs with robocopy.
+   - **Format prompt:** If Windows offers to format a drive afterwards, click Cancel: that's the Linux system partition.
 
 If you clone on the Windows side instead of in WSL, run `git config --global core.autocrlf false` before cloning. The build refuses checkouts with Windows line endings.
 
