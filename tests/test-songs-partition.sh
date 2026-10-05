@@ -41,10 +41,27 @@ grep -q "card.img3 : start= *$start, size= *$size, type=7" <<<"$dump" || fail "S
 cmp -s <(dd if="$work/card.img" bs=1 skip=4096 count=13 2>/dev/null) <(printf 'IMAGE-PAYLOAD') ||
 	fail "image data after the MBR was not written intact"
 
+# --skip-songs: the card's SONGS entry must match what a new image would write
+[ "$(mbr_songs_entry "$work/card.img")" = "07 $start $size" ] ||
+	fail "SONGS entry reads back as '$(mbr_songs_entry "$work/card.img")', expected '07 $start $size'"
+other=$(( 128 * 1024 * 1024 * 2 ))
+[ "07 $(songs_extent "$work/image.img" "$other")" != "07 $start $size" ] ||
+	fail "a card of a different size matched this card's SONGS entry"
+
+# --skip-songs: re-flashing a new image must leave the songs untouched
+printf 'SONGS-DATA' | dd of="$work/card.img" bs=512 seek="$start" conv=notrunc 2>/dev/null
+printf 'NEW-IMAGE-PAYLOAD' | dd of="$work/image.img" bs=1 seek=4096 conv=notrunc 2>/dev/null
+patched_image_stream "$card_sectors" cat "$work/image.img" 3>/dev/null |
+	dd of="$work/card.img" bs=4M conv=notrunc 2>/dev/null
+cmp -s <(dd if="$work/card.img" bs=512 skip="$start" count=1 2>/dev/null | head -c 10) <(printf 'SONGS-DATA') ||
+	fail "re-flashing the image overwrote the songs"
+cmp -s <(dd if="$work/card.img" bs=1 skip=4096 count=17 2>/dev/null) <(printf 'NEW-IMAGE-PAYLOAD') ||
+	fail "re-flashing did not write the new image"
+
 # An 8 GB card has no room for the 16 GB system area plus SONGS: must refuse
 small=$(( 8 * 1024 * 1024 * 2 ))
 if patched_image_stream "$small" cat "$work/image.img" 3>/dev/null >/dev/null 2>&1; then
 	fail "an 8 GB card was accepted"
 fi
 
-echo "OK: SONGS at sector $start ($(( size / 2 / 1024 / 1024 )) GiB), boot/root untouched, disk id kept"
+echo "OK: SONGS at sector $start ($(( size / 2 / 1024 / 1024 )) GiB), boot/root untouched, disk id kept, re-flash keeps songs"

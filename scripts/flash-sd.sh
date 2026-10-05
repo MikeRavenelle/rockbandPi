@@ -7,6 +7,7 @@
 #   sudo scripts/flash-sd.sh /dev/sdX   [image] [songs-dir]     (Linux)
 #   sudo scripts/flash-sd.sh /dev/diskN [image] [songs-dir]     (macOS)
 #   sudo scripts/flash-sd.sh --songs-only [/dev/sdX] [songs-dir]
+#   sudo scripts/flash-sd.sh --skip-songs [/dev/sdX] [image]
 #
 # image defaults to the newest deploy/*.img (.img.xz / .img.zst also work);
 # songs-dir defaults to ./songs. Pass "" as the device to pick from the list
@@ -16,6 +17,11 @@
 # SONGS partition and copies the songs, for a card that already has the image
 # (for example when a flash stopped after writing it). To add songs without
 # erasing the ones on the card, use scripts/copy-songs.sh instead.
+#
+# --skip-songs updates the system on a card flashed by this script and keeps
+# its SONGS partition and songs: it writes the new image and leaves SONGS
+# alone. It refuses if SONGS isn't exactly where the new partition table
+# puts it (a different card, or one set up another way).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,10 +29,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT/scripts/lib/songs-partition.sh"
 
 SONGS_ONLY=0
-if [ "${1:-}" = "--songs-only" ]; then
-	SONGS_ONLY=1
-	shift
-fi
+SKIP_SONGS=0
+case "${1:-}" in
+	--songs-only) SONGS_ONLY=1; shift ;;
+	--skip-songs) SKIP_SONGS=1; shift ;;
+esac
 
 DEV="${1:-}"
 if [ "$SONGS_ONLY" = 1 ]; then
@@ -126,10 +133,32 @@ decompress() {
 }
 
 has_songs=0
+[ "$SKIP_SONGS" = 0 ] || SONGS="(kept on the card; --skip-songs)"
 for f in "$SONGS"/* "$SONGS"/.[!.]*; do
 	[ -e "$f" ] && [ "$(basename "$f")" != "README.md" ] && { has_songs=1; break; }
 done
-[ "$has_songs" = 1 ] || echo "Note: no songs in $SONGS; the card gets an empty SONGS partition."
+[ "$has_songs" = 1 ] || [ "$SKIP_SONGS" = 1 ] ||
+	echo "Note: no songs in $SONGS; the card gets an empty SONGS partition."
+
+# --skip-songs: refuses unless the card's SONGS partition (MBR entry 3, read
+# from raw device $1) is exactly where the new image's partition table will
+# put it, so writing the image can't touch the songs
+check_songs_kept() {  # check_songs_kept <raw device> <card sectors>
+	local card_mbr image_mbr have want
+	card_mbr="$(mktemp)"
+	image_mbr="$(mktemp)"
+	dd if="$1" of="$card_mbr" bs=$SECTOR count=1 2>/dev/null
+	decompress | head -c $SECTOR > "$image_mbr" || true
+	have="$(mbr_songs_entry "$card_mbr")"
+	want="07 $(songs_extent "$image_mbr" "$2")"
+	rm -f "$card_mbr" "$image_mbr"
+	if [ "$have" != "$want" ]; then
+		echo "This card's SONGS partition isn't where the new image expects it" >&2
+		echo "(card: type/start/size $have, expected $want)." >&2
+		echo "Flash it without --skip-songs, then copy the songs again." >&2
+		exit 1
+	fi
+}
 
 copy_songs() {  # copy_songs <mountpoint>
 	[ "$has_songs" = 1 ] || return 0
@@ -145,6 +174,9 @@ confirm() {
 	if [ "$SONGS_ONLY" = 1 ]; then
 		echo "Image:  (not written; --songs-only)"
 		what="THE SONGS PARTITION ON $DEV"
+	elif [ "$SKIP_SONGS" = 1 ]; then
+		echo "Image:  $IMG"
+		what="THE SYSTEM (EVERYTHING BUT SONGS) ON $DEV"
 	else
 		echo "Image:  $IMG"
 	fi
@@ -171,6 +203,7 @@ if [ "$OS" = "Darwin" ]; then
 		exit 1
 	fi
 	card_bytes="$(diskutil info -plist "$DEV" | plutil -extract TotalSize raw -)"
+	[ "$SKIP_SONGS" = 0 ] || check_songs_kept "${DEV/disk/rdisk}" $(( card_bytes / SECTOR ))
 	confirm "$(awk -F': *' '/Media Name|Disk Size/{printf "%s  ", $2}' <<<"$info")"
 
 	diskutil unmountDisk "$DEV"
@@ -179,6 +212,12 @@ if [ "$OS" = "Darwin" ]; then
 		patched_image_stream $(( card_bytes / SECTOR )) decompress 3>"$extent_file" |
 			dd of="${DEV/disk/rdisk}" bs=4m
 		sync
+	fi
+	if [ "$SKIP_SONGS" = 1 ]; then
+		diskutil eject "$DEV" || true
+		echo
+		echo "Done. SONGS and its songs were kept. Put the card in the Pi and power it on."
+		exit 0
 	fi
 
 	echo "==> Waiting for macOS to re-read the card"
@@ -222,6 +261,8 @@ case "$(basename "$DEV")" in
 esac
 if [ "$SONGS_ONLY" = 1 ]; then
 	[ -b "$P3" ] || { echo "$DEV has no third (SONGS) partition; flash the image first (without --songs-only)." >&2; exit 1; }
+elif [ "$SKIP_SONGS" = 1 ]; then
+	check_songs_kept "$DEV" "$card_sectors"
 elif [ "$has_songs" = 1 ]; then
 	songs_bytes=$(du -sb "$SONGS" | cut -f1)
 	need=$(( songs_bytes + (ROOT_SIZE_GIB + 2) * 1024 * 1024 * 1024 ))
@@ -242,6 +283,11 @@ if [ "$SONGS_ONLY" = 0 ]; then
 	sync
 	blockdev --rereadpt "$DEV" || partprobe "$DEV" || true
 	udevadm settle
+fi
+if [ "$SKIP_SONGS" = 1 ]; then
+	echo
+	echo "Done. SONGS and its songs were kept. Put the card in the Pi and power it on."
+	exit 0
 fi
 
 echo "==> Formatting SONGS (exFAT)"

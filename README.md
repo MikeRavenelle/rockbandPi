@@ -14,6 +14,7 @@ You bring the songs. Nothing in this repo contains or downloads song data.
 - [Setup on Windows](#setup-on-windows)
 - [First boot](#first-boot)
 - [Adding songs later](#adding-songs-later)
+- [Updating the system](#updating-the-system)
 - [Remote access and debugging](#remote-access-and-debugging)
 - [Controllers](#controllers)
 - [How it works](#how-it-works)
@@ -164,6 +165,16 @@ Then refresh the library in YARG under Settings > Songs.
 
 The copy scripts only copy new or changed files, and never delete anything on the card.
 
+## Updating the system
+
+To put a newly built image on a card and keep the songs already on it, use the Linux or macOS flash script:
+```bash
+sudo scripts/flash-sd.sh --skip-songs
+```
+It rewrites only the system partitions; SONGS and the songs on it stay as they are. It refuses unless SONGS is exactly where the new image expects it: it must be the same card, previously flashed by this script. The Pi resets its settings to the image's on the next boot, including YARG's settings and scores.
+
+On Windows this isn't possible, because Raspberry Pi Imager would drop or erase SONGS. Flash normally there, which copies the songs again.
+
 ## Remote access and debugging
 
 SSH is always enabled. With the default config:
@@ -276,7 +287,8 @@ scripts/
   build-image.sh / .ps1       build the image (Linux, macOS / Windows via WSL)
   build-yarg.sh / .ps1        build YARG from source as an IL2CPP player (optional)
   flash-sd.sh / .ps1          write the card, create SONGS, copy songs (Linux, macOS / Windows);
-                              --songs-only / -SongsOnly redoes only SONGS on a written card
+                              --songs-only / -SongsOnly redoes only SONGS on a written card;
+                              --skip-songs updates the system and keeps the songs (Linux, macOS)
   copy-songs.sh / .ps1        add songs later, to the card or over the network
   lib/songs-partition.sh      partition table helper used by flash-sd.sh
 image/stage-rockband/         pi-gen stage: packages, Box64, drivers, YARG, kiosk setup

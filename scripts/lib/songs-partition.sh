@@ -17,6 +17,13 @@ mbr_root_extent() {
 	od -An -tu4 -j470 -N8 "$1" | awk '{print $1, $2}'
 }
 
+# Prints MBR entry 3 (SONGS) of a 512-byte MBR file as "type start size",
+# type in hex (07 = exFAT), start and size in sectors.
+mbr_songs_entry() {
+	# Entry 3 starts at byte 478: type at +4, LBA start and length at +8 and +12
+	echo "$(od -An -tx1 -j482 -N1 "$1" | tr -d ' ') $(od -An -tu4 -j486 -N8 "$1" | xargs)"
+}
+
 # Prints a 32-bit little-endian value as printf escapes.
 le32() {
 	printf '\\x%02x\\x%02x\\x%02x\\x%02x' \

@@ -25,9 +25,17 @@ param(
     [int]$DiskNumber = -1,
     [string]$Image = "",
     [string]$Songs = (Join-Path $PSScriptRoot "..\songs"),
-    [switch]$SongsOnly
+    [switch]$SongsOnly,
+    [switch]$SkipSongs
 )
 $ErrorActionPreference = "Stop"
+
+if ($SkipSongs) {
+    # Raspberry Pi Imager writes the image's own partition table (no SONGS
+    # entry) and may erase the whole card first, so the songs can't be kept
+    throw ("-SkipSongs isn't possible on Windows: Raspberry Pi Imager would drop or erase the SONGS partition. " +
+        "Flash normally (songs are copied again), or use scripts/flash-sd.sh --skip-songs on Linux or macOS.")
+}
 
 if ($DiskNumber -lt 0) {
     # Removable drives only (SD, USB); never system or boot disks or empty card-reader slots
