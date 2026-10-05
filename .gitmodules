@@ -11,3 +11,6 @@
 [submodule "external/xpad-noone"]
 	path = external/xpad-noone
 	url = https://github.com/Jan200101/xpad-noone
+[submodule "external/YARG"]
+	path = external/YARG
+	url = https://github.com/YARC-Official/YARG.git
