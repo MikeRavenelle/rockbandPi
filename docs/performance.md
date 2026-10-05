@@ -40,6 +40,8 @@ How YARG went from 15-20 FPS to a steady 60 FPS in songs on a Pi 5, what each ch
 | + bloom | 58.6 (min 52) | 79% | no: little visible difference without HDR |
 | + venue at 60 FPS | 59.8 (min 58.5) | 75% | no: kept at 30 for steady gameplay; one setting (`VenueFpsCap`) |
 
+With vocals (drums + 2 guitars + a vocals bot, venue at 30 FPS): 59.9 FPS over a minute of the song (minimum 59.4), GPU 91%, CPU 59%. The full-width vocals lane is expensive to fill; if a song dips, `YARG_HIGHWAY_SCALE=0.67` frees about 10% GPU. A real microphone adds pitch detection on the CPU (not measured; the bot doesn't use one).
+
 The venue first rendered nothing and left the screen uncleared (UI piling up on itself): its post-processing pass needed an intermediate texture, which `0009` had turned off. That pass now requests one itself.
 
 Not tried: High quality mode (MSAA, HDR, shadows, SMAA everywhere) and song background videos (decoded under emulation).
@@ -80,5 +82,5 @@ All over SSH, with the TV off but connected:
 
 ## Next
 
-- Vocals with a microphone haven't been measured yet.
+- Vocals with a real microphone (pitch detection) haven't been measured yet.
 - Custom per-song venues may cost more than the default one.
