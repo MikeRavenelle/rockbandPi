@@ -264,6 +264,7 @@ The flash scripts put SONGS 16 GB after the start of the system partition, and t
 | `mknod: invalid minor device number '/dev/loop0 (lost)'` | pi-gen bug in older checkouts: the host created a loop device after the build container started. | Fixed by `patches/pi-gen/0002`. If a build already got this far, resume with only the export: `CONTINUE=1 SKIP_STAGES="stage0 stage1 stage2 stage-rockband" scripts/build-image.sh` |
 | `deploy/build-docker.log: No such file or directory` right after `copying results from deploy/` | Older checkouts of this repo with Podman: the image was built, but Podman copied it into `build/pi-gen/` instead of `build/pi-gen/deploy/`. | Fixed in `scripts/build-image.sh`. For a build that already hit it: move `build/pi-gen/*.img` and `*.info` into `deploy/`, then `sudo podman rm -v pigen_work`. |
 | `This checkout has Windows (CRLF) line endings` | The repo was cloned on Windows with automatic line-ending conversion. | Clone inside WSL, or run `git config --global core.autocrlf false` and clone again. |
+| `Device has existing signatures. Refusing to overwrite` while flashing | Older checkouts: the card's old SONGS filesystem was still there, and newer `mkfs.exfat` won't format over it. The image itself was already written. | Fixed in `scripts/flash-sd.sh`. To finish that card without rewriting the image: `sudo scripts/flash-sd.sh --songs-only` (macOS too; Windows: `.\scripts\flash-sd.ps1 -SongsOnly`). |
 | A failure in a later stage | pi-gen log | `build/pi-gen/deploy/build-docker.log` and `build/pi-gen/work/*/build.log` show the failing step. |
 
 ## Repository layout
@@ -274,7 +275,8 @@ songs/                        your song library (contents ignored by git)
 scripts/
   build-image.sh / .ps1       build the image (Linux, macOS / Windows via WSL)
   build-yarg.sh / .ps1        build YARG from source as an IL2CPP player (optional)
-  flash-sd.sh / .ps1          write the card, create SONGS, copy songs (Linux, macOS / Windows)
+  flash-sd.sh / .ps1          write the card, create SONGS, copy songs (Linux, macOS / Windows);
+                              --songs-only / -SongsOnly redoes only SONGS on a written card
   copy-songs.sh / .ps1        add songs later, to the card or over the network
   lib/songs-partition.sh      partition table helper used by flash-sd.sh
 image/stage-rockband/         pi-gen stage: packages, Box64, drivers, YARG, kiosk setup

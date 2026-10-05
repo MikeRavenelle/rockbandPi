@@ -65,6 +65,8 @@ if ! blkid -L "$SONGS_LABEL" >/dev/null 2>&1; then
 		udevadm settle
 	fi
 	log "formatting $songs_part as exFAT ($SONGS_LABEL)"
+	# Clear leftovers of an older layout; newer mkfs.exfat refuses to overwrite
+	wipefs -a -f -q "$songs_part"
 	mkfs.exfat -L "$SONGS_LABEL" "$songs_part"
 	udevadm settle
 fi

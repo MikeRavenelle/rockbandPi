@@ -11,16 +11,21 @@
 
   Run from an elevated PowerShell (Run as Administrator).
 
+  -SongsOnly skips writing the image, for a card that already has it: it only
+  creates the SONGS partition if it's missing and copies the songs.
+
 .EXAMPLE
   .\scripts\flash-sd.ps1                     # pick the card from a list
   .\scripts\flash-sd.ps1 -DiskNumber 2
   .\scripts\flash-sd.ps1 -Image deploy\rockbandPi.img -Songs D:\RockBand
+  .\scripts\flash-sd.ps1 -SongsOnly -DiskNumber 2
 #>
 #Requires -RunAsAdministrator
 param(
     [int]$DiskNumber = -1,
     [string]$Image = "",
-    [string]$Songs = (Join-Path $PSScriptRoot "..\songs")
+    [string]$Songs = (Join-Path $PSScriptRoot "..\songs"),
+    [switch]$SongsOnly
 )
 $ErrorActionPreference = "Stop"
 
@@ -51,6 +56,19 @@ if ($DiskNumber -lt 0) {
     $DiskNumber = $candidates[$n - 1].Number
 }
 
+$disk = Get-Disk -Number $DiskNumber
+if ($disk.IsSystem -or $disk.IsBoot) { throw "Disk $DiskNumber is a system/boot disk. Refusing." }
+if ($disk.BusType -notin @("USB", "SD", "MMC")) {
+    throw "Disk $DiskNumber is on bus '$($disk.BusType)', not USB/SD. Refusing to be safe."
+}
+
+if ($SongsOnly) {
+    & (Join-Path $PSScriptRoot "copy-songs.ps1") -DiskNumber $DiskNumber -Songs $Songs
+    Write-Host ""
+    Write-Host "Done. Eject the card, put it in the Pi and power it on."
+    exit 0
+}
+
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if (-not $Image) {
     $Image = Get-ChildItem (Join-Path $repo "deploy") -Filter "*.img*" -ErrorAction SilentlyContinue |
@@ -60,12 +78,6 @@ if (-not $Image -or -not (Test-Path $Image)) {
     throw "No image found; build one with .\scripts\build-image.ps1 first."
 }
 $Image = (Resolve-Path $Image).Path
-
-$disk = Get-Disk -Number $DiskNumber
-if ($disk.IsSystem -or $disk.IsBoot) { throw "Disk $DiskNumber is a system/boot disk. Refusing." }
-if ($disk.BusType -notin @("USB", "SD", "MMC")) {
-    throw "Disk $DiskNumber is on bus '$($disk.BusType)', not USB/SD. Refusing to be safe."
-}
 
 $imagerDirs = @($env:ProgramFiles, [Environment]::GetEnvironmentVariable("ProgramFiles(x86)"))
 $imager = $imagerDirs | Where-Object { $_ } |

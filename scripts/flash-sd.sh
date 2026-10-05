@@ -6,19 +6,36 @@
 #   sudo scripts/flash-sd.sh                      # pick the card from a list
 #   sudo scripts/flash-sd.sh /dev/sdX   [image] [songs-dir]     (Linux)
 #   sudo scripts/flash-sd.sh /dev/diskN [image] [songs-dir]     (macOS)
+#   sudo scripts/flash-sd.sh --songs-only [/dev/sdX] [songs-dir]
 #
 # image defaults to the newest deploy/*.img (.img.xz / .img.zst also work);
 # songs-dir defaults to ./songs. Pass "" as the device to pick from the list
 # while still giving an image or songs folder. Everything on the card is erased.
+#
+# --songs-only skips writing the image: it only formats the card's existing
+# SONGS partition and copies the songs, for a card that already has the image
+# (for example when a flash stopped after writing it). To add songs without
+# erasing the ones on the card, use scripts/copy-songs.sh instead.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib/songs-partition.sh
 . "$ROOT/scripts/lib/songs-partition.sh"
 
+SONGS_ONLY=0
+if [ "${1:-}" = "--songs-only" ]; then
+	SONGS_ONLY=1
+	shift
+fi
+
 DEV="${1:-}"
-IMG="${2:-$(ls -t "$ROOT"/deploy/*.img* 2>/dev/null | head -1 || true)}"
-SONGS="${3:-$ROOT/songs}"
+if [ "$SONGS_ONLY" = 1 ]; then
+	IMG=""
+	SONGS="${2:-$ROOT/songs}"
+else
+	IMG="${2:-$(ls -t "$ROOT"/deploy/*.img* 2>/dev/null | head -1 || true)}"
+	SONGS="${3:-$ROOT/songs}"
+fi
 OS="$(uname -s)"
 
 [ "$(id -u)" -eq 0 ] || { echo "Run with sudo." >&2; exit 1; }
@@ -96,7 +113,9 @@ case "$DEV" in
 	/*) ;;
 	*) [ -e "/dev/$DEV" ] && DEV="/dev/$DEV" ;;
 esac
-[ -n "$IMG" ] && [ -f "$IMG" ] || { echo "No image found; run scripts/build-image.sh first." >&2; exit 1; }
+if [ "$SONGS_ONLY" = 0 ]; then
+	[ -n "$IMG" ] && [ -f "$IMG" ] || { echo "No image found; run scripts/build-image.sh first." >&2; exit 1; }
+fi
 
 decompress() {
 	case "$IMG" in
@@ -121,11 +140,17 @@ copy_songs() {  # copy_songs <mountpoint>
 }
 
 confirm() {
+	local what="ALL DATA ON $DEV"
 	echo "Device: $DEV  ($1)"
-	echo "Image:  $IMG"
+	if [ "$SONGS_ONLY" = 1 ]; then
+		echo "Image:  (not written; --songs-only)"
+		what="THE SONGS PARTITION ON $DEV"
+	else
+		echo "Image:  $IMG"
+	fi
 	echo "Songs:  $SONGS"
 	echo
-	read -r -p "ALL DATA ON $DEV WILL BE ERASED. Type the device name ($(basename "$DEV")) to continue: " answer
+	read -r -p "$what WILL BE ERASED. Type the device name ($(basename "$DEV")) to continue: " answer
 	[ "$answer" = "$(basename "$DEV")" ] || { echo "Aborted."; exit 1; }
 }
 
@@ -149,10 +174,12 @@ if [ "$OS" = "Darwin" ]; then
 	confirm "$(awk -F': *' '/Media Name|Disk Size/{printf "%s  ", $2}' <<<"$info")"
 
 	diskutil unmountDisk "$DEV"
-	echo "==> Writing image with the SONGS partition added (no progress bar; press Ctrl+T for status)"
-	patched_image_stream $(( card_bytes / SECTOR )) decompress 3>"$extent_file" |
-		dd of="${DEV/disk/rdisk}" bs=4m
-	sync
+	if [ "$SONGS_ONLY" = 0 ]; then
+		echo "==> Writing image with the SONGS partition added (no progress bar; press Ctrl+T for status)"
+		patched_image_stream $(( card_bytes / SECTOR )) decompress 3>"$extent_file" |
+			dd of="${DEV/disk/rdisk}" bs=4m
+		sync
+	fi
 
 	echo "==> Waiting for macOS to re-read the card"
 	for _ in $(seq 1 30); do
@@ -189,7 +216,13 @@ fi
 command -v mkfs.exfat >/dev/null || { echo "mkfs.exfat not found; install exfatprogs." >&2; exit 1; }
 
 card_sectors=$(blockdev --getsz "$DEV")
-if [ "$has_songs" = 1 ]; then
+case "$(basename "$DEV")" in
+	*[0-9]) P3="${DEV}p3" ;;
+	*)      P3="${DEV}3" ;;
+esac
+if [ "$SONGS_ONLY" = 1 ]; then
+	[ -b "$P3" ] || { echo "$DEV has no third (SONGS) partition; flash the image first (without --songs-only)." >&2; exit 1; }
+elif [ "$has_songs" = 1 ]; then
 	songs_bytes=$(du -sb "$SONGS" | cut -f1)
 	need=$(( songs_bytes + (ROOT_SIZE_GIB + 2) * 1024 * 1024 * 1024 ))
 	if [ $(( card_sectors * SECTOR )) -lt "$need" ]; then
@@ -202,18 +235,20 @@ confirm "$(lsblk -dno MODEL,SIZE "$DEV" | xargs)"
 echo "==> Unmounting any mounted partitions"
 lsblk -nro NAME,MOUNTPOINT "$DEV" | awk '$2 != "" {print "/dev/"$1}' | xargs -r umount
 
-echo "==> Writing image with the SONGS partition added"
-patched_image_stream "$card_sectors" decompress 3>"$extent_file" |
-	dd of="$DEV" bs=4M conv=fsync status=progress
-sync
-blockdev --rereadpt "$DEV" || partprobe "$DEV" || true
-udevadm settle
+if [ "$SONGS_ONLY" = 0 ]; then
+	echo "==> Writing image with the SONGS partition added"
+	patched_image_stream "$card_sectors" decompress 3>"$extent_file" |
+		dd of="$DEV" bs=4M conv=fsync status=progress
+	sync
+	blockdev --rereadpt "$DEV" || partprobe "$DEV" || true
+	udevadm settle
+fi
 
-case "$(basename "$DEV")" in
-	*[0-9]) P3="${DEV}p3" ;;
-	*)      P3="${DEV}3" ;;
-esac
 echo "==> Formatting SONGS (exFAT)"
+# A previous flash leaves its SONGS filesystem at the same spot, which can
+# look like a nested partition table; newer mkfs.exfat refuses to format
+# over either
+wipefs -a -f -q "$P3"
 mkfs.exfat -L SONGS "$P3"
 
 mnt="$(mktemp -d)"
