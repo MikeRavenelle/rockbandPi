@@ -1,0 +1,43 @@
+From: rockbandPi
+Subject: [PATCH] Use delegates instead of a function pointer array for collectors
+
+IL2CPP (Unity 6000.3) crashes with a NullReferenceException in
+Inflater.InflateType while converting SongEntrySorting, because of its
+static array of function pointers with generic parameters
+(delegate*<SongCache, Dictionary<SongEntry, CacheWriteIndices>,
+List<string>>[]). Mono handles it, so official builds never hit this. Use
+a Func<,,>[] instead; it is only called once per cache write, so the
+delegate overhead doesn't matter.
+---
+diff --git a/YARG.Core/Song/Entries/SongEntry.Sorting.cs b/YARG.Core/Song/Entries/SongEntry.Sorting.cs
+index 6ce5ac3b..4ac9b6f3 100644
+--- a/YARG.Core/Song/Entries/SongEntry.Sorting.cs
++++ b/YARG.Core/Song/Entries/SongEntry.Sorting.cs
+@@ -186,10 +186,12 @@ namespace YARG.Core.Song
+             }
+         }
+ 
+-        private static readonly unsafe delegate*<SongCache, Dictionary<SongEntry, CacheWriteIndices>, List<string>>[] COLLECTORS =
++        // Delegates rather than function pointers: IL2CPP crashes on arrays of
++        // function pointers with generic parameters
++        private static readonly Func<SongCache, Dictionary<SongEntry, CacheWriteIndices>, List<string>>[] COLLECTORS =
+         {
+-            &CollectCacheTitles, &CollectCacheArtists,  &CollectCacheAlbums,    &CollectCacheGenres, &CollectCacheSubgenres,
+-            &CollectCacheYears,  &CollectCacheCharters, &CollectCachePlaylists, &CollectCacheSources,
++            CollectCacheTitles, CollectCacheArtists,  CollectCacheAlbums,    CollectCacheGenres, CollectCacheSubgenres,
++            CollectCacheYears,  CollectCacheCharters, CollectCachePlaylists, CollectCacheSources,
+         };
+ 
+         internal static void WriteCategoriesToCache(FileStream filestream, SongCache cache, Dictionary<SongEntry, CacheWriteIndices> nodes)
+@@ -205,10 +207,7 @@ namespace YARG.Core.Song
+             var categories = new List<string>[CacheReadStrings.NUM_CATEGORIES];
+             Parallel.For(0, CacheReadStrings.NUM_CATEGORIES, i =>
+             {
+-                unsafe
+-                {
+-                    categories[i] = COLLECTORS[i](cache, nodes);
+-                }
++                categories[i] = COLLECTORS[i](cache, nodes);
+             });
+ 
+             using MemoryStream ms = new();

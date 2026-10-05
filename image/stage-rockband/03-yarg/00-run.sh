@@ -1,19 +1,23 @@
 #!/bin/bash -e
-# Install the pinned YARG release plus the x86_64 libraries it loads that Box64
+# Install YARG (the pinned release, or with YARG_SOURCE=local the IL2CPP build
+# from scripts/build-yarg.sh) plus the x86_64 libraries it loads that Box64
 # does not wrap natively (hidapi).
 . ../kiosk.env
 
 dl="$(mktemp -d)"
 trap 'rm -rf "$dl"' EXIT
 
-zip="YARG_${YARG_VERSION}-Linux-x86_64.zip"
-curl -fsSL --retry 3 -o "$dl/$zip" \
-	"https://github.com/YARC-Official/YARG/releases/download/${YARG_VERSION}/${zip}"
-echo "${YARG_SHA256}  $dl/$zip" | sha256sum -c -
-
 rm -rf "${ROOTFS_DIR}/opt/yarg"
 mkdir -p "${ROOTFS_DIR}/opt/yarg"
-bsdtar -xf "$dl/$zip" -C "${ROOTFS_DIR}/opt/yarg"
+if [ "${YARG_SOURCE}" = "local" ]; then
+	cp -a files/yarg/. "${ROOTFS_DIR}/opt/yarg/"
+else
+	zip="YARG_${YARG_VERSION}-Linux-x86_64.zip"
+	curl -fsSL --retry 3 -o "$dl/$zip" \
+		"https://github.com/YARC-Official/YARG/releases/download/${YARG_VERSION}/${zip}"
+	echo "${YARG_SHA256}  $dl/$zip" | sha256sum -c -
+	bsdtar -xf "$dl/$zip" -C "${ROOTFS_DIR}/opt/yarg"
+fi
 chmod +x "${ROOTFS_DIR}/opt/yarg/YARG"
 
 # libhidapi-hidraw0 (amd64) from the Debian release the image is built on.

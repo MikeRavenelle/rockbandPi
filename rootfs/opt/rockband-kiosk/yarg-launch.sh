@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Starts YARG (Linux x86_64 build) under Box64. Run by kiosk-session.sh inside
 # cage; can also be run by hand from a desktop/X session for testing.
-#   yarg-launch.sh [opengl|vulkan]
+#   yarg-launch.sh [vulkan|opengl]
 set -uo pipefail
 
-RENDERER="${1:-opengl}"
+RENDERER="${1:-vulkan}"
 YARG_DIR=/opt/yarg
 DATA_DIR="$HOME/.local/share/yarg"
 LOG_DIR="$HOME/.local/state/yarg-kiosk"
@@ -29,8 +29,9 @@ export SDL_VIDEODRIVER=x11
 args=(-screen-fullscreen 1 -persistent-data-path "$DATA_DIR" -logFile "$LOG_DIR/player.log")
 
 if [ "$RENDERER" = "vulkan" ]; then
-  # Unsupported on the Pi 5 with YARG v0.15.0: YARG requests a D32_SFLOAT_S8
-  # depth buffer the V3D GPU doesn't offer, so frames fail to render.
+  # Needs the YARG from scripts/build-yarg.sh: the official v0.15.0 release
+  # requests a D32_SFLOAT_S8 depth buffer the V3D GPU doesn't offer, so frames
+  # fail to render (patches/YARG/0001 falls back to D24_UNORM_S8)
   args+=(-force-vulkan)
 else
   # The Pi 5 GPU reports OpenGL 3.1; Unity requires a 3.2+ core profile

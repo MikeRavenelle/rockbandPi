@@ -1,0 +1,92 @@
+From: rockbandPi
+Subject: [PATCH] Add a headless Linux x86_64 IL2CPP build
+
+Official Linux builds use Mono. Under an x86_64 emulator such as Box64,
+Mono's JIT generates x86_64 code at runtime that the emulator then has to
+translate again. An IL2CPP build is compiled ahead of time, so the emulator
+translates it once and caches it.
+
+Editor.LinuxIl2cppBuild.Build is meant for -executeMethod in batch mode. It
+switches the Standalone backend to IL2CPP (speed-optimized code, Minimal
+stripping) for that build only, and exits with the build result.
+Assets/link.xml keeps the assemblies that are used through reflection.
+---
+diff --git a/Assets/Editor/LinuxIl2cppBuild.cs b/Assets/Editor/LinuxIl2cppBuild.cs
+new file mode 100644
+index 00000000..00541a46
+--- /dev/null
++++ b/Assets/Editor/LinuxIl2cppBuild.cs
+@@ -0,0 +1,56 @@
++using System;
++using System.Linq;
++using UnityEditor;
++using UnityEditor.Build;
++using UnityEditor.Build.Reporting;
++using UnityEngine;
++
++namespace Editor
++{
++    // Headless Linux x86_64 IL2CPP build, used by rockbandPi:
++    //   Unity -batchmode -quit -buildTarget Linux64 \
++    //     -executeMethod Editor.LinuxIl2cppBuild.Build -yargBuildPath <dir>/YARG
++    // IL2CPP compiles the game ahead of time, so an x86_64 emulator (Box64)
++    // translates it once instead of translating Mono's JIT output at runtime.
++    public static class LinuxIl2cppBuild
++    {
++        public static void Build()
++        {
++            string path = GetArgument("-yargBuildPath") ?? "Builds/Linux-x86_64-IL2CPP/YARG";
++
++            var target = NamedBuildTarget.Standalone;
++            PlayerSettings.SetScriptingBackend(target, ScriptingImplementation.IL2CPP);
++            PlayerSettings.SetIl2CppCompilerConfiguration(target, Il2CppCompilerConfiguration.Release);
++            PlayerSettings.SetIl2CppCodeGeneration(target, Il2CppCodeGeneration.OptimizeSpeed);
++            // Minimal only strips the .NET class libraries and UnityEngine;
++            // anything reached through reflection is kept by Assets/link.xml
++            PlayerSettings.SetManagedStrippingLevel(target, ManagedStrippingLevel.Minimal);
++
++            var options = new BuildPlayerOptions
++            {
++                scenes = EditorBuildSettings.scenes.Where(s => s.enabled).Select(s => s.path).ToArray(),
++                locationPathName = path,
++                target = BuildTarget.StandaloneLinux64,
++                targetGroup = BuildTargetGroup.Standalone,
++                options = BuildOptions.None,
++            };
++
++            var report = BuildPipeline.BuildPlayer(options);
++            var summary = report.summary;
++            Debug.Log($"Linux IL2CPP build: {summary.result}, {summary.totalErrors} errors, " +
++                $"{summary.totalSize / (1024 * 1024)} MB, {summary.totalTime}");
++
++            if (Application.isBatchMode)
++            {
++                EditorApplication.Exit(summary.result == BuildResult.Succeeded ? 0 : 1);
++            }
++        }
++
++        private static string GetArgument(string name)
++        {
++            var args = Environment.GetCommandLineArgs();
++            int index = Array.IndexOf(args, name);
++            return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
++        }
++    }
++}
+diff --git a/Assets/link.xml b/Assets/link.xml
+new file mode 100644
+index 00000000..b152cbd8
+--- /dev/null
++++ b/Assets/link.xml
+@@ -0,0 +1,11 @@
++<linker>
++  <!--
++    Kept whole for IL2CPP builds: settings and profiles are (de)serialized by
++    reflection with Newtonsoft.Json, and input device layouts are registered
++    by type.
++  -->
++  <assembly fullname="Assembly-CSharp" preserve="all" />
++  <assembly fullname="YARG.Core" preserve="all" />
++  <assembly fullname="Newtonsoft.Json" preserve="all" />
++  <assembly fullname="Unity.InputSystem" preserve="all" />
++</linker>

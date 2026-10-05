@@ -28,6 +28,11 @@ WIFI_PSK=""
 YARG_RESOLUTION=1920x1080
 
 # --- YARG ----------------------------------------------------------------------
+# Where the image's YARG comes from:
+#   release  the official Linux x86_64 release below (Mono)
+#   local    your own IL2CPP build from scripts/build-yarg.sh (build/yarg/player),
+#            compiled ahead of time so it runs faster under emulation
+YARG_SOURCE=release
 # Pinned release and its SHA-256 (from the downloaded Linux-x86_64 zip)
 YARG_VERSION=v0.15.0
 YARG_SHA256=a13bf5372096a920b6de98c7be299c864df6673b85d4c552f13fb2ea611917ca

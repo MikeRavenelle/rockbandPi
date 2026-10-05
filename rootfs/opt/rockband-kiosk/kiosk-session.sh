@@ -6,7 +6,7 @@
 # Escape hatch: over SSH, `touch ~/.kiosk-disable` and reboot.
 set -uo pipefail
 
-YARG_RENDERER=opengl
+YARG_RENDERER=vulkan
 ON_QUIT=poweroff
 # shellcheck source=/dev/null
 [ -r /etc/rockband-kiosk/kiosk.conf ] && . /etc/rockband-kiosk/kiosk.conf

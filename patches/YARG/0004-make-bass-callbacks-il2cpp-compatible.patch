@@ -1,0 +1,423 @@
+From: rockbandPi
+Subject: [PATCH] Make BASS callbacks IL2CPP compatible
+
+IL2CPP can only pass delegates to native code when they point to static
+methods marked [MonoPInvokeCallback]. YARG hands BASS lambdas and instance
+methods, which Mono accepts but IL2CPP rejects at runtime with
+"IL2CPP does not support marshaling delegates that point to instance
+methods to native code". Song audio then fails to load and gameplay stays on
+a black screen.
+
+Turn every BASS callback into a static [MonoPInvokeCallback] method that
+finds its object through BASS's user pointer, a GCHandle that is freed once
+BASS can no longer call back:
+- BassStreamProcedures: file close/length/read/seek for song streams
+- BassStemMixer: normalization gain DSP and song end sync
+- BassSampleChannel: sound effect end sync
+- BassMicDevice: recording callback, and the attribute on the monitor gain DSP
+---
+diff --git a/Assets/Script/Audio/Bass/BassAudioManager.cs b/Assets/Script/Audio/Bass/BassAudioManager.cs
+index 4e733860..5d6fdce6 100644
+--- a/Assets/Script/Audio/Bass/BassAudioManager.cs
++++ b/Assets/Script/Audio/Bass/BassAudioManager.cs
+@@ -630,9 +630,11 @@ namespace YARG.Audio.BASS
+             // https://www.un4seen.com/forum/?topic=20148.msg140872#msg140872
+             const BassFlags streamFlags = BassFlags.Prescan | BassFlags.Decode | BassFlags.AsyncFile | (BassFlags) 64;
+ 
+-            streamHandle = Bass.CreateStream(StreamSystem.NoBuffer, streamFlags, new BassStreamProcedures(stream));
++            var procedures = new BassStreamProcedures(stream);
++            streamHandle = Bass.CreateStream(StreamSystem.NoBuffer, streamFlags, procedures, procedures.User);
+             if (streamHandle == 0)
+             {
++                procedures.Release();
+                 YargLogger.LogFormatError("Failed to create source stream: {0}!", Bass.LastError);
+                 return false;
+             }
+diff --git a/Assets/Script/Audio/Bass/BassMicDevice.cs b/Assets/Script/Audio/Bass/BassMicDevice.cs
+index 6106ebf5..bae4cfe5 100644
+--- a/Assets/Script/Audio/Bass/BassMicDevice.cs
++++ b/Assets/Script/Audio/Bass/BassMicDevice.cs
+@@ -1,6 +1,7 @@
+ ﻿using System;
+ using System.Collections.Concurrent;
+ using System.Runtime.InteropServices;
++using AOT;
+ using ManagedBass;
+ using ManagedBass.Fx;
+ using UnityEngine;
+@@ -75,6 +76,8 @@ namespace YARG.Audio.BASS
+             _applyGain = applyGain;
+         }
+ 
++        // Called by BASS from native code; IL2CPP needs [MonoPInvokeCallback]
++        [MonoPInvokeCallback(typeof(DSPProcedure))]
+         private static void ApplyGain(int handle, int channel, IntPtr buffer, int length, IntPtr user)
+         {
+             BassHelpers.ApplyGain(1.3f, buffer, length);
+@@ -107,13 +110,13 @@ namespace YARG.Audio.BASS
+         private static readonly int[] _sampleRates = { 48000, 44100, 96000, 16000 };
+ 
+ #nullable enable
+-        public static RecordingHandle? CreateRecordingHandle(RecordProcedure procedure)
++        public static RecordingHandle? CreateRecordingHandle(RecordProcedure procedure, IntPtr user)
+ #nullable disable
+         {
+             var devPeriod = Bass.GetConfig(Configuration.DevicePeriod);
+             foreach (int sampleRate in _sampleRates)
+             {
+-                int handle = Bass.RecordStart(sampleRate, 1, BassFlags.Default, devPeriod, procedure, IntPtr.Zero);
++                int handle = Bass.RecordStart(sampleRate, 1, BassFlags.Default, devPeriod, procedure, user);
+                 if (handle == 0)
+                 {
+                     YargLogger.LogFormatTrace("Failed to start clean recording at {0} Hz: {1}!", sampleRate, Bass.LastError);
+@@ -193,9 +196,11 @@ namespace YARG.Audio.BASS
+             }
+ 
+             var device = new BassMicDevice(deviceId, name);
+-            device._recordHandle = RecordingHandle.CreateRecordingHandle(device.ProcessRecordData);
++            device._selfHandle = GCHandle.Alloc(device);
++            device._recordHandle = RecordingHandle.CreateRecordingHandle(RecordProc, GCHandle.ToIntPtr(device._selfHandle));
+             if (device._recordHandle == null)
+             {
++                device._selfHandle.Free();
+                 FreeDevice(deviceId);
+                 return null;
+             }
+@@ -206,6 +211,7 @@ namespace YARG.Audio.BASS
+             if (monitorPlayback == null)
+             {
+                 device._recordHandle.Dispose();
++                device._selfHandle.Free();
+                 FreeDevice(deviceId);
+                 return null;
+             }
+@@ -339,6 +345,20 @@ namespace YARG.Audio.BASS
+             _deviceId = deviceId;
+         }
+ 
++        // BASS calls this from native code. IL2CPP can only marshal delegates to
++        // static methods marked [MonoPInvokeCallback], so it finds the device
++        // through the user pointer (a GCHandle, freed once recording has stopped).
++        private static readonly RecordProcedure RecordProc = RecordCallback;
++
++        private GCHandle _selfHandle;
++
++        [MonoPInvokeCallback(typeof(RecordProcedure))]
++        private static bool RecordCallback(int handle, IntPtr buffer, int length, IntPtr user)
++        {
++            var device = (BassMicDevice) GCHandle.FromIntPtr(user).Target;
++            return device.ProcessRecordData(handle, buffer, length, user);
++        }
++
+         private bool ProcessRecordData(int handle, IntPtr buffer, int length, IntPtr user)
+         {
+             // Copies the data from the recording buffer to the monitor playback buffer.
+@@ -452,6 +472,12 @@ namespace YARG.Audio.BASS
+             _recordHandle.Dispose();
+             Bass.CurrentRecordingDevice = _deviceId;
+             Bass.RecordFree();
++
++            // Recording has stopped, so BASS no longer calls back into this device
++            if (_selfHandle.IsAllocated)
++            {
++                _selfHandle.Free();
++            }
+         }
+     }
+ }
+diff --git a/Assets/Script/Audio/Bass/BassSampleChannel.cs b/Assets/Script/Audio/Bass/BassSampleChannel.cs
+index 6299e032..76aabd64 100644
+--- a/Assets/Script/Audio/Bass/BassSampleChannel.cs
++++ b/Assets/Script/Audio/Bass/BassSampleChannel.cs
+@@ -1,4 +1,6 @@
+ ﻿using System;
++using System.Runtime.InteropServices;
++using AOT;
+ using ManagedBass;
+ using UnityEngine;
+ using YARG.Core.Audio;
+@@ -203,13 +205,32 @@ namespace YARG.Audio.BASS
+                 return;
+             }
+ 
+-            _syncHandle = Bass.ChannelSetSync(_channel, SyncFlags.End, 0, EndCallback);
++            if (!_selfHandle.IsAllocated)
++            {
++                _selfHandle = GCHandle.Alloc(this);
++            }
++
++            _syncHandle = Bass.ChannelSetSync(_channel, SyncFlags.End, 0, EndSyncProc, GCHandle.ToIntPtr(_selfHandle));
+             if (_syncHandle == 0)
+             {
+                 YargLogger.LogFormatError("Failed to set {0} end callback: {1}!", Sample, Bass.LastError);
+             }
+         }
+ 
++        // BASS calls this from native code. IL2CPP can only marshal delegates to
++        // static methods marked [MonoPInvokeCallback], so it finds the channel
++        // through the user pointer (a GCHandle, freed once the sample is freed).
++        private static readonly SyncProcedure EndSyncProc = EndSyncCallback;
++
++        private GCHandle _selfHandle;
++
++        [MonoPInvokeCallback(typeof(SyncProcedure))]
++        private static void EndSyncCallback(int handle, int channel, int data, IntPtr user)
++        {
++            var sampleChannel = (BassSampleChannel) GCHandle.FromIntPtr(user).Target;
++            sampleChannel.EndCallback(handle, channel, data, user);
++        }
++
+ #nullable enable
+         protected override void SetOutputChannel_Internal(OutputChannel? channel)
+ #nullable disable
+@@ -226,6 +247,12 @@ namespace YARG.Audio.BASS
+         protected override void DisposeUnmanagedResources()
+         {
+             Bass.SampleFree(_sfxHandle);
++
++            // The channel that called back into this object is gone now
++            if (_selfHandle.IsAllocated)
++            {
++                _selfHandle.Free();
++            }
+         }
+     }
+ }
+\ No newline at end of file
+diff --git a/Assets/Script/Audio/Bass/BassStemMixer.cs b/Assets/Script/Audio/Bass/BassStemMixer.cs
+index 63110ba0..f1f95ca7 100644
+--- a/Assets/Script/Audio/Bass/BassStemMixer.cs
++++ b/Assets/Script/Audio/Bass/BassStemMixer.cs
+@@ -2,6 +2,8 @@ using System;
+ using System.Collections.Generic;
+ using System.IO;
+ using System.Linq;
++using System.Runtime.InteropServices;
++using AOT;
+ using ManagedBass;
+ using ManagedBass.Fx;
+ using ManagedBass.Mix;
+@@ -61,16 +63,7 @@ namespace YARG.Audio.BASS
+             {
+                 if (_songEndHandle == 0)
+                 {
+-                    void sync(int _, int __, int ___, IntPtr _____)
+-                    {
+-                        // Prevent potential race conditions by caching the value as a local
+-                        var end = _songEnd;
+-                        if (end != null)
+-                        {
+-                            UnityMainThreadCallback.QueueEvent(end.Invoke);
+-                        }
+-                    }
+-                    _songEndHandle = BassMix.ChannelSetSync(_longestHandle, SyncFlags.End, 0, sync);
++                    _songEndHandle = BassMix.ChannelSetSync(_longestHandle, SyncFlags.End, 0, SongEndSyncProc, SelfPointer);
+                 }
+ 
+                 _songEnd += value;
+@@ -112,10 +105,7 @@ namespace YARG.Audio.BASS
+ 
+         private void AddGainDSP()
+         {
+-            _gainDspHandle = Bass.ChannelSetDSP(_mixerHandle, (handle, channel, buffer, length, user) =>
+-            {
+-                BassHelpers.ApplyGain(_gain, buffer, length);
+-            });
++            _gainDspHandle = Bass.ChannelSetDSP(_mixerHandle, GainDspProc, SelfPointer);
+ 
+             if (_gainDspHandle == 0)
+             {
+@@ -123,6 +113,45 @@ namespace YARG.Audio.BASS
+             }
+         }
+ 
++        // BASS calls these from native code. IL2CPP can only marshal delegates to
++        // static methods marked [MonoPInvokeCallback], so they find the mixer
++        // through the user pointer (a GCHandle, freed once the streams are freed).
++        private static readonly DSPProcedure  GainDspProc     = GainDspCallback;
++        private static readonly SyncProcedure SongEndSyncProc = SongEndSyncCallback;
++
++        private GCHandle _selfHandle;
++
++        private IntPtr SelfPointer
++        {
++            get
++            {
++                if (!_selfHandle.IsAllocated)
++                {
++                    _selfHandle = GCHandle.Alloc(this);
++                }
++                return GCHandle.ToIntPtr(_selfHandle);
++            }
++        }
++
++        [MonoPInvokeCallback(typeof(DSPProcedure))]
++        private static void GainDspCallback(int handle, int channel, IntPtr buffer, int length, IntPtr user)
++        {
++            var mixer = (BassStemMixer) GCHandle.FromIntPtr(user).Target;
++            BassHelpers.ApplyGain(mixer._gain, buffer, length);
++        }
++
++        [MonoPInvokeCallback(typeof(SyncProcedure))]
++        private static void SongEndSyncCallback(int handle, int channel, int data, IntPtr user)
++        {
++            var mixer = (BassStemMixer) GCHandle.FromIntPtr(user).Target;
++            // Prevent potential race conditions by caching the value as a local
++            var end = mixer._songEnd;
++            if (end != null)
++            {
++                UnityMainThreadCallback.QueueEvent(end.Invoke);
++            }
++        }
++
+ 
+         protected override int Play_Internal()
+         {
+@@ -605,6 +634,12 @@ namespace YARG.Audio.BASS
+                     YargLogger.LogFormatError("Failed to free tempo stream: {0}!", Bass.LastError);
+                 }
+             }
++
++            // The streams that called back into this mixer are gone now
++            if (_selfHandle.IsAllocated)
++            {
++                _selfHandle.Free();
++            }
+         }
+ 
+         private void CreateChannel(SongStem stem, int sourceHandle, StreamHandle streamHandles, StreamHandle reverbHandles)
+diff --git a/Assets/Script/Audio/Bass/BassStreamProcedures.cs b/Assets/Script/Audio/Bass/BassStreamProcedures.cs
+index 6aaafea9..7027cc86 100644
+--- a/Assets/Script/Audio/Bass/BassStreamProcedures.cs
++++ b/Assets/Script/Audio/Bass/BassStreamProcedures.cs
+@@ -1,50 +1,106 @@
+ ﻿using System;
+ using System.IO;
++using System.Runtime.InteropServices;
++using System.Threading;
++using AOT;
+ using ManagedBass;
+ 
+ namespace YARG.Audio.BASS
+ {
++    // BASS calls these from native code. IL2CPP can only marshal delegates to
++    // static methods marked [MonoPInvokeCallback], so the callbacks are static
++    // and find their stream through the user pointer (a GCHandle to this object).
++    // Pass User to Bass.CreateStream along with this object.
+     public class BassStreamProcedures : FileProcedures
+     {
++        private static readonly FileCloseProcedure  CloseProc  = CloseCallback;
++        private static readonly FileLengthProcedure LengthProc = LengthCallback;
++        private static readonly FileReadProcedure   ReadProc   = ReadCallback;
++        private static readonly FileSeekProcedure   SeekProc   = SeekCallback;
++
+         private readonly Stream _stream;
+         private readonly long _start;
+         private readonly long _length;
+ 
++        private GCHandle _handle;
++        private int _released;
++
++        public IntPtr User => GCHandle.ToIntPtr(_handle);
++
+         public BassStreamProcedures(Stream stream)
+         {
+             _stream = stream;
+             _start = stream.Position;
+             _length = stream.Length - _start;
++            _handle = GCHandle.Alloc(this);
++
++            Close = CloseProc;
++            Length = LengthProc;
++            Read = ReadProc;
++            Seek = SeekProc;
++        }
+ 
+-            Close = (IntPtr) => _stream.Close();
+-            Length = (IntPtr) => _length;
+-            Read = (IntPtr Buffer, int Length, IntPtr User) =>
++        /// <summary>
++        /// Closes the stream and frees the user pointer. BASS calls this when the
++        /// stream is freed; call it yourself if creating the BASS stream failed.
++        /// </summary>
++        public void Release()
++        {
++            if (Interlocked.Exchange(ref _released, 1) != 0)
+             {
+-                try
+-                {
+-                    unsafe
+-                    {
+-                        return _stream.Read(new Span<byte>((byte*) Buffer, Length));
+-                    }
+-                }
+-                catch
+-                {
+-                    return 0;
+-                }
+-            };
++                return;
++            }
++
++            _stream.Close();
++            _handle.Free();
++        }
++
++        private static BassStreamProcedures FromUser(IntPtr user)
++        {
++            return (BassStreamProcedures) GCHandle.FromIntPtr(user).Target;
++        }
+ 
+-            Seek = (long Offset, IntPtr User) =>
++        [MonoPInvokeCallback(typeof(FileCloseProcedure))]
++        private static void CloseCallback(IntPtr user)
++        {
++            FromUser(user).Release();
++        }
++
++        [MonoPInvokeCallback(typeof(FileLengthProcedure))]
++        private static long LengthCallback(IntPtr user)
++        {
++            return FromUser(user)._length;
++        }
++
++        [MonoPInvokeCallback(typeof(FileReadProcedure))]
++        private static int ReadCallback(IntPtr buffer, int length, IntPtr user)
++        {
++            try
+             {
+-                try
++                unsafe
+                 {
+-                    _stream.Seek(Offset + _start, SeekOrigin.Begin);
+-                    return true;
++                    return FromUser(user)._stream.Read(new Span<byte>((byte*) buffer, length));
+                 }
+-                catch
+-                {
+-                    return false;
+-                }
+-            };
++            }
++            catch
++            {
++                return 0;
++            }
++        }
++
++        [MonoPInvokeCallback(typeof(FileSeekProcedure))]
++        private static bool SeekCallback(long offset, IntPtr user)
++        {
++            try
++            {
++                var procedures = FromUser(user);
++                procedures._stream.Seek(offset + procedures._start, SeekOrigin.Begin);
++                return true;
++            }
++            catch
++            {
++                return false;
++            }
+         }
+     }
+ }

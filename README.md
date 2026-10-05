@@ -186,7 +186,9 @@ The user, password and SSH key come from `config/kiosk.conf`. The kiosk only run
 
 Settings on the Pi:
 - `/etc/rockband-kiosk/kiosk.conf`
-  - `YARG_RENDERER`: `opengl` (default) or `vulkan`. Vulkan doesn't work on the Pi 5 with YARG v0.15.0: YARG asks for a depth buffer format (D32 float + stencil) the Pi's GPU doesn't offer, and the screen stays black or flickers.
+  - `YARG_RENDERER`: `vulkan` (default) or `opengl`.
+    - Vulkan needs the YARG built by `scripts/build-yarg.sh` (`YARG_SOURCE=local`). That build falls back to a depth buffer format the Pi supports (see `patches/YARG/0001`). Vulkan with it is untested on the Pi.
+    - With the official v0.15.0 release, set `opengl`: that release asks for a depth buffer format (D32 float + stencil) the Pi's GPU doesn't offer, and the screen stays black or flickers. The black screen isn't a crash, so the automatic OpenGL fallback doesn't catch it.
 - **Render resolution:** left unset, YARG renders at the TV's native resolution, often 4K, which is far too heavy under emulation. The image sets YARG's resolution to `YARG_RESOLUTION` from `config/kiosk.conf` (default `1920x1080`) and scales the picture up to the TV.
   - **To change it later:** use Settings > Graphics > Resolution in YARG, or edit `"Resolution"` in `~/.local/share/yarg/settings.json` with YARG closed. `1280x720` is faster.
 - **YARG graphics:** the image starts YARG with its lightest settings:
@@ -235,7 +237,7 @@ It recognises Xbox 360 instruments by the device type stored in their USB descri
 | Game | YARG v0.15.0, the official Linux x86_64 release, pinned by checksum | Full band with vocals and harmonies; reads Rock Band song files as they are |
 | x86 emulation | Box64, built from source for the Pi 5 | YARG has no ARM build ([YARG#1269](https://github.com/YARC-Official/YARG/issues/1269)) |
 | Kernel | `kernel8.img` (4K memory pages) | Box64 doesn't run on the Pi 5's default 16K-page kernel |
-| Display | `cage` kiosk compositor with Xwayland, OpenGL renderer at 1080p, transparent cursor theme | One full-screen app, no desktop, no mouse pointer on the TV |
+| Display | `cage` kiosk compositor with Xwayland, Vulkan renderer (OpenGL fallback) at 1080p, transparent cursor theme | One full-screen app, no desktop, no mouse pointer on the TV |
 | Audio | PipeWire | HDMI output and USB microphones at the same time |
 | Drivers | `xone` (Xbox One/Series), `xpad-noone` (Xbox 360), built with DKMS | `xpad-noone` keeps Xbox 360 support while `xone` takes Xbox One devices; DKMS rebuilds both on kernel updates |
 | Song share | Samba share `songs` | Copy songs from any OS over the network |
@@ -271,6 +273,7 @@ config/kiosk.conf.example     build settings: user, password, Wi-Fi, SSH key, YA
 songs/                        your song library (contents ignored by git)
 scripts/
   build-image.sh / .ps1       build the image (Linux, macOS / Windows via WSL)
+  build-yarg.sh / .ps1        build YARG from source as an IL2CPP player (optional)
   flash-sd.sh / .ps1          write the card, create SONGS, copy songs (Linux, macOS / Windows)
   copy-songs.sh / .ps1        add songs later, to the card or over the network
   lib/songs-partition.sh      partition table helper used by flash-sd.sh
@@ -280,7 +283,7 @@ bridge/                       rb-bridge instrument bridge (Python) and its tests
 patches/                      changes to submodules, applied at build time
 tests/                        host-side tests
 docs/                         design notes and plans
-external/                     submodules: pi-gen, box64, xone, xpad-noone
+external/                     submodules: pi-gen, box64, xone, xpad-noone, YARG
 ```
 
 | Submodule | Source | Pinned at |
@@ -289,6 +292,7 @@ external/                     submodules: pi-gen, box64, xone, xpad-noone
 | `external/box64` | [ptitSeb/box64](https://github.com/ptitSeb/box64) | master, 2026-10-04 |
 | `external/xone` | [dlundqvist/xone](https://github.com/dlundqvist/xone) | `v0.5.8` + `patches/xone/` |
 | `external/xpad-noone` | [Jan200101/xpad-noone](https://github.com/Jan200101/xpad-noone) | kernel 7.0.12 sync + `patches/xpad-noone/` |
+| `external/YARG` | [YARC-Official/YARG](https://github.com/YARC-Official/YARG) | `v0.15.0` + `patches/YARG/`; only used by `scripts/build-yarg.sh` |
 
 The submodules are never edited directly. Changes live in `patches/<submodule>/` and are applied to a copy during the build:
 
@@ -298,6 +302,12 @@ The submodules are never edited directly. Changes live in `patches/<submodule>/`
 | `patches/pi-gen/0002-ensure-next-loopdev-strip-lost-suffix.patch` | Fixes image export failing with `invalid minor device number '/dev/loop0 (lost)'` when the host creates a loop device after the build container started |
 | `patches/xone/0001-pdp-jaguar-use-fret-bitmasks-add-pickup-and-riffmaster-joystick.patch` | Reads the Riffmaster's frets correctly and adds its pickup switch and joystick |
 | `patches/xpad-noone/0001-drop-xbox-one-vendor-matches.patch` | Stops `xpad-noone` from claiming Xbox One devices (such as the Riffmaster dongle) by vendor, so `xone` drives them |
+| `patches/YARG/0001-fall-back-to-d24s8-depth-when-d32s8-is-unsupported.patch` | Uses a 24-bit depth buffer on GPUs that can't render to D32 float + stencil (the Pi 5 under Vulkan) |
+| `patches/YARG/0002-add-headless-linux-il2cpp-build.patch` | Adds the batch-mode Linux x86_64 IL2CPP build that `scripts/build-yarg.sh` runs, and a `link.xml` for reflection |
+| `patches/YARG/0003-use-delegates-instead-of-function-pointer-array-for-sorters.patch` | Works around an IL2CPP crash on arrays of function pointers in the song library sorter |
+| `patches/YARG/0004-make-bass-callbacks-il2cpp-compatible.patch` | Turns YARG's audio callbacks into static methods IL2CPP can pass to BASS; without it songs load into a black screen with no audio |
+| `patches/YARG.Core/0001-use-delegates-instead-of-function-pointer-array-for-collectors.patch` | Same workaround as `0003`, in YARG.Core (a submodule inside YARG), for the song cache writer |
+| `patches/ManagedBass/` | A small tool, not a diff: ManagedBass is a prebuilt NuGet DLL, so the build adds the `MonoPInvokeCallback` attribute IL2CPP needs to its internal channel-freed callback |
 
 **Running the tests** (Linux host):
 ```bash
@@ -307,6 +317,21 @@ STAGE_ONLY=1 scripts/build-image.sh     # prepares the build without running it
 ```
 
 **Updating YARG.** Set `YARG_VERSION` and `YARG_SHA256` in `config/kiosk.conf` and rebuild. Get the checksum with `sha256sum` on the downloaded `Linux-x86_64.zip`.
+
+**Building YARG from source (IL2CPP).** The official release uses Mono, whose JIT output Box64 has to translate again at runtime. An IL2CPP build is compiled ahead of time, so Box64 only translates it once.
+1. **License.** You need a free Unity Personal license: install Unity Hub, sign in, and activate the license once.
+   - The license file stays on your machine. It's mounted into the build container and never committed.
+   - Unity Hub 3 saves Personal licenses as `UnityEntitlementLicense.xml`, tied to the computer's `/etc/machine-id`. The script passes both to the container, so this works from a Linux host. On macOS and Windows, a Hub 3 license doesn't carry over to the Linux container; use a `Unity_lic.ulf` there (`UNITY_LICENSE_FILE` / `-License`).
+2. **Build:**
+
+   | OS | Command |
+   |---|---|
+   | Linux / macOS | `scripts/build-yarg.sh` |
+   | Windows | `.\scripts\build-yarg.ps1` |
+
+   - **What it does:** builds `external/YARG` plus `patches/YARG/` with the Unity editor in a container (GameCI's `unityci/editor` image, about 6 GB) into `build/yarg/player/`.
+   - **Time:** the first build takes an hour or more. Later builds reuse Unity's cache in `build/yarg/project/Library`.
+3. **Use it:** set `YARG_SOURCE=local` in `config/kiosk.conf` and run `scripts/build-image.sh`.
 
 ## Status
 
@@ -331,7 +356,7 @@ STAGE_ONLY=1 scripts/build-image.sh     # prepares the build without running it
 
 ## License
 
-The code in this repo is MIT licensed; see [LICENSE](LICENSE). The patches in `patches/xone/` are GPL-2.0-or-later and those in `patches/xpad-noone/` are GPL-2.0, because they modify those drivers. The patches in `patches/pi-gen/` follow pi-gen's BSD 3-Clause license.
+The code in this repo is MIT licensed; see [LICENSE](LICENSE). The patches in `patches/xone/` are GPL-2.0-or-later and those in `patches/xpad-noone/` are GPL-2.0, because they modify those drivers. The patches in `patches/pi-gen/` follow pi-gen's BSD 3-Clause license, and those in `patches/YARG/` and `patches/YARG.Core/` are LGPL-3.0, like YARG. The tool in `patches/ManagedBass/` is MIT, like ManagedBass.
 
 Third-party software keeps its own license:
 
@@ -341,7 +366,7 @@ Third-party software keeps its own license:
 | Box64 | MIT | submodule; built into the image |
 | xone | GPL-2.0-or-later | submodule; built into the image with DKMS |
 | xpad-noone | GPL-2.0 | submodule; built into the image with DKMS |
-| YARG | LGPL-3.0 (bundles third-party libraries under their own terms) | downloaded during the build |
+| YARG | LGPL-3.0 (bundles third-party libraries under their own terms) | downloaded during the build, or built from the submodule by `scripts/build-yarg.sh` |
 | Raspberry Pi OS / Debian packages | various free software licenses | installed during the build |
 | Xbox Wireless Adapter firmware | Microsoft terms of use | downloaded from Microsoft during the build |
 

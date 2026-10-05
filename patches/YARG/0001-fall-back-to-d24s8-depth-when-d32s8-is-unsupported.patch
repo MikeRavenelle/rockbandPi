@@ -1,0 +1,67 @@
+From: rockbandPi
+Subject: [PATCH] Fall back to D24S8 depth when D32S8 is unsupported
+
+URP's default depth-stencil format on desktop platforms is
+D32_SFloat_S8_UInt, chosen at compile time without checking the GPU. The
+Raspberry Pi 5's V3D GPU can't render to it under Vulkan, so every camera
+fails and the screen stays black or flickers. When the GPU doesn't support
+D32_SFloat_S8_UInt, switch every URP renderer to D24_UNorm_S8_UInt, which
+is what URP already uses on Android and Embedded Linux.
+---
+diff --git a/Assets/Script/Persistent/GraphicsManager.cs b/Assets/Script/Persistent/GraphicsManager.cs
+index 7b934243..7787e6d4 100644
+--- a/Assets/Script/Persistent/GraphicsManager.cs
++++ b/Assets/Script/Persistent/GraphicsManager.cs
+@@ -1,4 +1,5 @@
+ using UnityEngine;
++using UnityEngine.Experimental.Rendering;
+ using UnityEngine.Rendering;
+ using UnityEngine.Rendering.Universal;
+ using YARG.Core.Logging;
+@@ -59,6 +60,46 @@ namespace YARG
+             {
+                 YargLogger.LogError("Could not find film grain component in the post process volume.");
+             }
++
++            UseSupportedDepthFormat();
++        }
++
++        // URP's default depth format on desktop is D32_SFloat_S8_UInt, which
++        // some GPUs (e.g. the Raspberry Pi's V3D under Vulkan) can't render to.
++        // Fall back to D24_UNorm_S8_UInt there, like URP does on Android.
++        private static void UseSupportedDepthFormat()
++        {
++            if (SystemInfo.IsFormatSupported(GraphicsFormat.D32_SFloat_S8_UInt, GraphicsFormatUsage.Render) ||
++                !SystemInfo.IsFormatSupported(GraphicsFormat.D24_UNorm_S8_UInt, GraphicsFormatUsage.Render))
++            {
++                return;
++            }
++
++            YargLogger.LogInfo("D32_SFloat_S8_UInt is not supported, using D24_UNorm_S8_UInt for depth.");
++            for (int i = 0; i < QualitySettings.count; i++)
++            {
++                if (QualitySettings.GetRenderPipelineAssetAt(i) is not UniversalRenderPipelineAsset pipeline)
++                {
++                    continue;
++                }
++
++                foreach (var data in pipeline.rendererDataList)
++                {
++                    if (data is not UniversalRendererData renderer)
++                    {
++                        continue;
++                    }
++
++                    if (renderer.depthAttachmentFormat == DepthFormat.Default)
++                    {
++                        renderer.depthAttachmentFormat = DepthFormat.Depth_24_Stencil_8;
++                    }
++                    if (renderer.depthTextureFormat == DepthFormat.Default)
++                    {
++                        renderer.depthTextureFormat = DepthFormat.Depth_24_Stencil_8;
++                    }
++                }
++            }
+         }
+
+         private void OnApplicationQuit()

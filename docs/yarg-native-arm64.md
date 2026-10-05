@@ -60,6 +60,14 @@ Cheap changes, each measured against Phase 0:
 
 ### Phase 2: IL2CPP x86_64 build of YARG (still under Box64)
 
+**Status (2026-10-04):** steps 1 to 3 are in place:
+- `external/YARG` is pinned at v0.15.0
+- `patches/YARG/0002` adds the build method and `link.xml`
+- `scripts/build-yarg.sh` / `.ps1` run the build
+- `YARG_SOURCE` switches the image between the release and the local build
+
+Discord is turned off through the kiosk's `settings.json` (`DiscordRichPresence: Hide`) instead of a patch. `patches/YARG/0001` also fixes Vulkan's depth format on the Pi. Step 4 (testing) is still open.
+
 The official build uses Mono. Under Box64, Mono's JIT generates x86_64 code at runtime, which Box64 then has to translate again, with two code generators stacked. An IL2CPP build is compiled ahead of time to native x86_64 code, so Box64 translates it once and caches it. This is the most promising speedup that doesn't depend on Unity adding ARM64 support. It's legal: YARG is LGPL-3.0, and Unity Personal can build IL2CPP Linux players.
 
 Work:

@@ -37,7 +37,8 @@ printf '[Icon Theme]\nInherits=rockband-invisible\n' > "${home}/.icons/default/i
 # YARG settings: point it at the song library, skip first-run dialogs, and
 # start with the lightest graphics settings, since YARG runs under emulation.
 # Each setting is stored as its plain value; YARG fills in defaults for the
-# rest. VenueRenderingQuality 5 = UltraPerformance, VenueAntiAliasing 0 = None.
+# rest. VenueRenderingQuality 5 = UltraPerformance, VenueAntiAliasing 0 = None,
+# DiscordRichPresence 2 = Hide (no Discord on the kiosk; skips loading its SDK).
 # Resolution: YARG renders at this size and scales up to the TV (unset = the
 # TV's native resolution, 4K on many TVs, far too heavy under emulation).
 resolution_json=""
@@ -51,6 +52,7 @@ cat > "${home}/.local/share/yarg/settings.json" <<JSON
 {
   "SongFolders": ["${SONGS_DIR}"],
   "ShowAntiPiracyDialog": false,
+  "DiscordRichPresence": 2,
 ${resolution_json}
   "LowQuality": true,
   "FpsStats": true,

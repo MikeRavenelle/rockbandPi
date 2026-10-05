@@ -74,6 +74,28 @@ done
 rsync -a --delete "$ROOT/rootfs/" "$STAGE/04-kiosk/files/rootfs/"
 rsync -a --delete --exclude __pycache__ --exclude tests "$ROOT/bridge/" "$STAGE/04-kiosk/files/bridge/"
 cp "$ROOT/scripts/lib/make-invisible-cursor.py" "$STAGE/04-kiosk/files/"
+case "${YARG_SOURCE:-release}" in
+	release)
+		echo "    WARNING: the image starts YARG with Vulkan, which shows a black screen with the"
+		echo "             official release. Set YARG_SOURCE=local (scripts/build-yarg.sh), or"
+		echo "             YARG_RENDERER=opengl in /etc/rockband-kiosk/kiosk.conf on the Pi."
+		;;
+	local)
+		[ -x "$ROOT/build/yarg/player/YARG" ] || {
+			echo "YARG_SOURCE=local but build/yarg/player/YARG is missing. Run scripts/build-yarg.sh first." >&2
+			exit 1
+		}
+		echo "    YARG: local IL2CPP build from build/yarg/player"
+		mkdir -p "$STAGE/03-yarg/files"
+		# Unity's debug symbols and IL2CPP sources; not part of the game
+		rsync -a --delete --exclude '*_DoNotShip' --exclude '*_ButDontShipItWithYourGame' \
+			"$ROOT/build/yarg/player/" "$STAGE/03-yarg/files/yarg/"
+		;;
+	*)
+		echo "YARG_SOURCE must be release or local, not ${YARG_SOURCE}" >&2
+		exit 1
+		;;
+esac
 
 # Resuming: stages listed in SKIP_STAGES reuse what the previous run built
 # (pi-gen still exports their image)
@@ -95,6 +117,7 @@ XPAD_NOONE_VERSION="$(git -C "$ROOT/external/xpad-noone" rev-parse --short HEAD)
 cat > "$STAGE/kiosk.env" <<EOF
 XONE_VERSION=$(printf %q "$XONE_VERSION")
 XPAD_NOONE_VERSION=$(printf %q "$XPAD_NOONE_VERSION")
+YARG_SOURCE=$(printf %q "${YARG_SOURCE:-release}")
 YARG_VERSION=$(printf %q "$YARG_VERSION")
 YARG_SHA256=$(printf %q "$YARG_SHA256")
 SONGS_DIR=/srv/songs
