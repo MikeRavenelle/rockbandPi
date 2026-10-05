@@ -37,10 +37,26 @@ printf '[Icon Theme]\nInherits=rockband-invisible\n' > "${home}/.icons/default/i
 # YARG settings: point it at the song library, skip first-run dialogs, and
 # start with the lightest graphics settings, since YARG runs under emulation.
 # Each setting is stored as its plain value; YARG fills in defaults for the
-# rest. VenueRenderingQuality 5 = UltraPerformance, VenueAntiAliasing 0 = None,
+# rest. The default venue stays on (a full band holds 60 FPS with it at 30 FPS
+# and UltraPerformance); song and global backgrounds stay off (videos would be
+# decoded under emulation). Bloom costs a full band up to 8 FPS for little
+# visible difference without HDR, so it stays off.
+# VenueRenderingQuality 5 = UltraPerformance, VenueAntiAliasing 0 = None,
 # DiscordRichPresence 2 = Hide (no Discord on the kiosk; skips loading its SDK).
-# Resolution: YARG renders at this size and scales up to the TV (unset = the
-# TV's native resolution, 4K on many TVs, far too heavy under emulation).
+# EnableNormalization off: it decodes every song's audio a second time in the
+# background to measure loudness, which took a full band from 60 to about
+# 50 FPS on a Pi 5 (Rock Band songs are mastered to consistent levels anyway).
+# Resolution: the TV is driven at this mode (DISPLAY_MODE, applied by
+# yarg-launch.sh), and YARG's full-screen window uses it. "native" keeps the
+# TV's own mode, 4K on many TVs, far too heavy for the Pi's GPU. YARG's own
+# Resolution setting is written too, for windowed mode.
+case "${YARG_RESOLUTION}" in
+	native) display_mode="" ;;
+	*x*)    display_mode="${YARG_RESOLUTION}" ;;
+	*)      display_mode=1280x720 ;;
+esac
+sed -i "s/^DISPLAY_MODE=.*/DISPLAY_MODE=${display_mode}/" "${ROOTFS_DIR}/etc/rockband-kiosk/kiosk.conf"
+sed -i "s/^YARG_HIGHWAY_SCALE=.*/YARG_HIGHWAY_SCALE=${YARG_HIGHWAY_SCALE:-0.75}/" "${ROOTFS_DIR}/etc/rockband-kiosk/kiosk.conf"
 resolution_json=""
 case "${YARG_RESOLUTION}" in
 	*x*)
@@ -53,6 +69,7 @@ cat > "${home}/.local/share/yarg/settings.json" <<JSON
   "SongFolders": ["${SONGS_DIR}"],
   "ShowAntiPiracyDialog": false,
   "DiscordRichPresence": 2,
+  "EnableNormalization": false,
 ${resolution_json}
   "LowQuality": true,
   "FpsStats": true,
@@ -64,7 +81,7 @@ ${resolution_json}
   "VenuePostProcessing": false,
   "DisableBloom": true,
   "DisableFilmGrain": true,
-  "DisableDefaultBackground": true,
+  "DisableDefaultBackground": false,
   "DisableGlobalBackgrounds": true,
   "DisablePerSongBackgrounds": true
 }

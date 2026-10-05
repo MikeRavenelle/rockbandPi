@@ -1,0 +1,59 @@
+From: rockbandPi
+Subject: [PATCH] Optional lower highway render scale
+
+On weak GPUs such as the Raspberry Pi 5's V3D, YARG is limited by how many
+pixels it draws, and the highways (camera, alpha mask and post-processing,
+all full screen) are the biggest part of that. The YARG_HIGHWAY_SCALE
+environment variable (0.5 to 1, default 1) renders the highway texture and
+its alpha mask at that fraction of the screen size; the UI stretches it back
+to full screen, so menus, lyrics and the score stay at full resolution.
+Without the variable nothing changes.
+---
+diff --git a/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs b/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs
+--- a/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs
++++ b/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs
+@@ -64,6 +64,26 @@
+         private readonly Matrix4x4[] _camProjMatrices = new Matrix4x4[MAX_MATRICES];
+         private readonly float[] _laneScales = new float[MAX_MATRICES];
+ 
++        // Renders the highways below screen resolution and stretches them back
++        // to full screen, for GPUs that can't fill the whole screen at 60 FPS
++        // (e.g. the Raspberry Pi 5). Set with the YARG_HIGHWAY_SCALE environment
++        // variable, 0.5 to 1 (default 1). Menus and the HUD stay at full resolution.
++        private static readonly float HighwayRenderScale = ReadHighwayRenderScale();
++
++        private static float ReadHighwayRenderScale()
++        {
++            var value = Environment.GetEnvironmentVariable("YARG_HIGHWAY_SCALE");
++            if (string.IsNullOrEmpty(value) ||
++                !float.TryParse(value, System.Globalization.NumberStyles.Float,
++                    System.Globalization.CultureInfo.InvariantCulture, out float scale))
++            {
++                return 1f;
++            }
++            return Mathf.Clamp(scale, 0.5f, 1f);
++        }
++
++        private static int Scaled(int pixels) => Mathf.Max(1, Mathf.RoundToInt(pixels * HighwayRenderScale));
++
+         public static readonly int YargHighwaysNumberID = Shader.PropertyToID("_YargHighwaysN");
+         public static readonly int YargHighwayCamViewMatricesID = Shader.PropertyToID("_YargCamViewMatrices");
+         public static readonly int YargHighwayCamInvViewMatricesID = Shader.PropertyToID("_YargCamInvViewMatrices");
+@@ -108,7 +128,7 @@
+ 
+             // Follow the render pipeline's HDR setting (off in Low quality):
+             // HDR targets double the memory traffic on tile-based mobile GPUs
+-            var descriptor = new RenderTextureDescriptor(Screen.width, Screen.height, GraphicsManager.ColorTargetFormat, 32, 0);
++            var descriptor = new RenderTextureDescriptor(Scaled(Screen.width), Scaled(Screen.height), GraphicsManager.ColorTargetFormat, 32, 0);
+ 
+             HighwaysOutputTexture = new RenderTexture(descriptor);
+             if (_highwaysOutput != null)
+@@ -353,7 +373,7 @@
+                 ? RenderTextureFormat.RFloat
+                 : RenderTextureFormat.RHalf;
+             var descriptor = new RenderTextureDescriptor(
+-                (int)(Screen.width * scaling), (int)(Screen.height * scaling),
++                Scaled((int)(Screen.width * scaling)), Scaled((int)(Screen.height * scaling)),
+                 alphaFormat)
+             {
+                 mipCount = 0,

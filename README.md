@@ -198,17 +198,18 @@ The user, password and SSH key come from `config/kiosk.conf`. The kiosk only run
 Settings on the Pi:
 - `/etc/rockband-kiosk/kiosk.conf`
   - `YARG_RENDERER`: `vulkan` (default) or `opengl`.
-    - Vulkan needs the YARG built by `scripts/build-yarg.sh` (`YARG_SOURCE=local`). That build falls back to a depth buffer format the Pi supports (see `patches/YARG/0001`). Vulkan with it is untested on the Pi.
+    - Vulkan needs the YARG built by `scripts/build-yarg.sh` (`YARG_SOURCE=local`). That build falls back to a depth buffer format the Pi supports (see `patches/YARG/0001`).
     - With the official v0.15.0 release, set `opengl`: that release asks for a depth buffer format (D32 float + stencil) the Pi's GPU doesn't offer, and the screen stays black or flickers. The black screen isn't a crash, so the automatic OpenGL fallback doesn't catch it.
-- **Render resolution:** left unset, YARG renders at the TV's native resolution, often 4K, which is far too heavy under emulation. The image sets YARG's resolution to `YARG_RESOLUTION` from `config/kiosk.conf` (default `1920x1080`) and scales the picture up to the TV.
-  - **To change it later:** use Settings > Graphics > Resolution in YARG, or edit `"Resolution"` in `~/.local/share/yarg/settings.json` with YARG closed. `1280x720` is faster.
+  - `DISPLAY_MODE`: the mode the TV is driven at, default `1280x720` (from `YARG_RESOLUTION` in `config/kiosk.conf`). YARG runs full screen at this size and the TV scales it up. Left empty, the Pi uses the TV's preferred mode, often 4K, which is far too heavy. YARG's own Resolution setting has no effect in full screen.
+  - `YARG_HIGHWAY_SCALE`: the highways' render resolution as a fraction of `DISPLAY_MODE`, `0.5` to `1`, default `0.75`. Menus, lyrics and the score always stay at full resolution. Needs `YARG_SOURCE=local`.
+  - `ON_QUIT`: `poweroff` or `restart`.
 - **YARG graphics:** the image starts YARG with its lightest settings:
   - low quality on; bloom, film grain, venue post-processing and anti-aliasing off
   - venue at UltraPerformance, capped at 30 FPS; VSync off with a 60 FPS cap
-  - backgrounds off
+  - YARG's default venue on; song and global backgrounds off
+  - audio normalization off (it decodes each song a second time in the background, which costs a full band about 10 FPS)
   - FPS counter on
-  - Change any of them in Settings > Graphics, or in `~/.local/share/yarg/settings.json`, with YARG closed.
-  - `ON_QUIT`: `poweroff` or `restart`.
+  - Change any of them in Settings > Graphics (and Settings > Audio), or in `~/.local/share/yarg/settings.json`, with YARG closed.
 - `/etc/rockband-kiosk/bridge.conf`: instrument bridge options (see below).
 
 ## Controllers
@@ -248,7 +249,7 @@ It recognises Xbox 360 instruments by the device type stored in their USB descri
 | Game | YARG v0.15.0, the official Linux x86_64 release, pinned by checksum | Full band with vocals and harmonies; reads Rock Band song files as they are |
 | x86 emulation | Box64, built from source for the Pi 5 | YARG has no ARM build ([YARG#1269](https://github.com/YARC-Official/YARG/issues/1269)) |
 | Kernel | `kernel8.img` (4K memory pages) | Box64 doesn't run on the Pi 5's default 16K-page kernel |
-| Display | `cage` kiosk compositor with Xwayland, Vulkan renderer (OpenGL fallback) at 1080p, transparent cursor theme | One full-screen app, no desktop, no mouse pointer on the TV |
+| Display | `cage` kiosk compositor with Xwayland, Vulkan renderer (OpenGL fallback) at 720p, transparent cursor theme | One full-screen app, no desktop, no mouse pointer on the TV |
 | Audio | PipeWire | HDMI output and USB microphones at the same time |
 | Drivers | `xone` (Xbox One/Series), `xpad-noone` (Xbox 360), built with DKMS | `xpad-noone` keeps Xbox 360 support while `xone` takes Xbox One devices; DKMS rebuilds both on kernel updates |
 | Song share | Samba share `songs` | Copy songs from any OS over the network |
@@ -320,6 +321,12 @@ The submodules are never edited directly. Changes live in `patches/<submodule>/`
 | `patches/YARG/0002-add-headless-linux-il2cpp-build.patch` | Adds the batch-mode Linux x86_64 IL2CPP build that `scripts/build-yarg.sh` runs, and a `link.xml` for reflection |
 | `patches/YARG/0003-use-delegates-instead-of-function-pointer-array-for-sorters.patch` | Works around an IL2CPP crash on arrays of function pointers in the song library sorter |
 | `patches/YARG/0004-make-bass-callbacks-il2cpp-compatible.patch` | Turns YARG's audio callbacks into static methods IL2CPP can pass to BASS; without it songs load into a black screen with no audio |
+| `patches/YARG/0005-set-mixer-matrices-without-2d-array-marshaling.patch` | Passes stem panning matrices to BASS without 2D-array marshaling, which IL2CPP can't do; without it some songs load into a black screen |
+| `patches/YARG/0006-lighter-render-targets-for-mobile-gpus.patch` | No HDR render targets in Low quality, and a highway fade mask format the Pi's GPU can blend |
+| `patches/YARG/0007-optional-lower-highway-render-scale.patch` | `YARG_HIGHWAY_SCALE`: renders the highways below screen resolution |
+| `patches/YARG/0008-no-smaa-on-the-highway-camera-in-low-quality.patch` | Turns off SMAA on the highway camera in Low quality (three extra full-screen passes) |
+| `patches/YARG/0009-low-quality-renderer-without-extra-copies.patch` | Low quality renders without a forced intermediate texture copy |
+| `patches/YARG/0010-no-tonemapping-in-low-quality.patch` | Turns off tonemapping in Low quality |
 | `patches/YARG.Core/0001-use-delegates-instead-of-function-pointer-array-for-collectors.patch` | Same workaround as `0003`, in YARG.Core (a submodule inside YARG), for the song cache writer |
 | `patches/ManagedBass/` | A small tool, not a diff: ManagedBass is a prebuilt NuGet DLL, so the build adds the `MonoPInvokeCallback` attribute IL2CPP needs to its internal channel-freed callback |
 

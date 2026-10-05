@@ -1,0 +1,98 @@
+From: rockbandPi
+Subject: [PATCH] Lighter render targets for mobile GPUs
+
+On the Raspberry Pi 5's V3D GPU, YARG is GPU bound. Two changes:
+
+- Low quality no longer renders HDR. The highway and venue render targets
+  follow the pipeline's HDR setting (GraphicsManager.ColorTargetFormat)
+  instead of always using DefaultHDR. HDR targets double the memory traffic
+  on tile-based GPUs, and with bloom off in Low quality they add nothing
+  visible. High quality is unchanged.
+- The highway alpha mask is drawn with BlendOp Max into an RFloat target,
+  which V3D can't blend ("Vulkan: Blending not supported for format 100"),
+  so overlapping highways overwrote each other's fade. Use RHalf where
+  32-bit float blending isn't supported.
+---
+diff --git a/Assets/Script/Persistent/GraphicsManager.cs b/Assets/Script/Persistent/GraphicsManager.cs
+--- a/Assets/Script/Persistent/GraphicsManager.cs
++++ b/Assets/Script/Persistent/GraphicsManager.cs
+@@ -44,6 +44,17 @@
+             get => filmGrain.active;
+         }
+ 
++        /// <summary>
++        /// Color format for YARG's own camera render targets: HDR only when the
++        /// active render pipeline renders HDR (off in Low quality). HDR targets
++        /// double the memory traffic, which tile-based mobile GPUs such as the
++        /// Raspberry Pi's V3D can't afford.
++        /// </summary>
++        public static RenderTextureFormat ColorTargetFormat =>
++            GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset { supportsHDR: false }
++                ? RenderTextureFormat.Default
++                : RenderTextureFormat.DefaultHDR;
++
+         public bool LowQuality
+         {
+             set => QualitySettings.SetQualityLevel(value ? 0 : 1, true);
+diff --git a/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs b/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs
+--- a/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs
++++ b/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs
+@@ -1,6 +1,7 @@
+ using System;
+ using System.Collections.Generic;
+ using UnityEngine;
++using UnityEngine.Experimental.Rendering;
+ using UnityEngine.Rendering;
+ using UnityEngine.Rendering.RendererUtils;
+ using UnityEngine.Rendering.Universal;
+@@ -105,7 +106,9 @@
+                 HighwaysOutputTexture.DiscardContents();
+             }
+ 
+-            var descriptor = new RenderTextureDescriptor(Screen.width, Screen.height, RenderTextureFormat.DefaultHDR, 32, 0);
++            // Follow the render pipeline's HDR setting (off in Low quality):
++            // HDR targets double the memory traffic on tile-based mobile GPUs
++            var descriptor = new RenderTextureDescriptor(Screen.width, Screen.height, GraphicsManager.ColorTargetFormat, 32, 0);
+ 
+             HighwaysOutputTexture = new RenderTexture(descriptor);
+             if (_highwaysOutput != null)
+@@ -344,9 +347,14 @@
+             }
+ 
+             float scaling = 1.0f;
++            // The alpha mask is drawn with BlendOp Max; some GPUs (the Raspberry
++            // Pi's V3D) can't blend 32-bit float targets, so use 16-bit there
++            var alphaFormat = SystemInfo.IsFormatSupported(GraphicsFormat.R32_SFloat, GraphicsFormatUsage.Blend)
++                ? RenderTextureFormat.RFloat
++                : RenderTextureFormat.RHalf;
+             var descriptor = new RenderTextureDescriptor(
+                 (int)(Screen.width * scaling), (int)(Screen.height * scaling),
+-                RenderTextureFormat.RFloat)
++                alphaFormat)
+             {
+                 mipCount = 0,
+             };
+diff --git a/Assets/Script/Gameplay/VenueCameraRenderer.cs b/Assets/Script/Gameplay/VenueCameraRenderer.cs
+--- a/Assets/Script/Gameplay/VenueCameraRenderer.cs
++++ b/Assets/Script/Gameplay/VenueCameraRenderer.cs
+@@ -132,7 +132,7 @@
+                 _trailsTexture.DiscardContents();
+             }
+ 
+-            var descriptor = new RenderTextureDescriptor(outputWidth, outputHeight, RenderTextureFormat.DefaultHDR, 16, 0);
++            var descriptor = new RenderTextureDescriptor(outputWidth, outputHeight, GraphicsManager.ColorTargetFormat, 16, 0);
+ 
+             if (_venueOutput != null)
+             {
+diff --git a/Assets/Settings/Low.asset b/Assets/Settings/Low.asset
+--- a/Assets/Settings/Low.asset
++++ b/Assets/Settings/Low.asset
+@@ -23,7 +23,7 @@
+   m_RequireOpaqueTexture: 0
+   m_OpaqueDownsampling: 1
+   m_SupportsTerrainHoles: 1
+-  m_SupportsHDR: 1
++  m_SupportsHDR: 0
+   m_HDRColorBufferPrecision: 0
+   m_MSAA: 1
+   m_RenderScale: 1

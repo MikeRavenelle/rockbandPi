@@ -1,0 +1,57 @@
+From: rockbandPi
+Subject: [PATCH] No tonemapping in Low quality
+
+Low quality already turns bloom and film grain off and (with 0006) renders
+without HDR. Tonemapping was still on, and it is the costliest part of the
+highway's post-processing pass: on the Raspberry Pi 5 that pass went from
+3.0 to 1.7 ms without it. Turn it off in Low quality and back on otherwise.
+---
+diff --git a/Assets/Script/Persistent/GraphicsManager.cs b/Assets/Script/Persistent/GraphicsManager.cs
+--- a/Assets/Script/Persistent/GraphicsManager.cs
++++ b/Assets/Script/Persistent/GraphicsManager.cs
+@@ -28,6 +28,7 @@
+ 
+         private Bloom bloom = null;
+         private FilmGrain filmGrain = null;
++        private Tonemapping tonemapping = null;
+ 
+         public float VenueRenderScale = 1.0f;
+         public VenueAntiAliasingMethod VenueAntiAliasing = VenueAntiAliasingMethod.None;
+@@ -57,10 +58,24 @@
+ 
+         public bool LowQuality
+         {
+-            set => QualitySettings.SetQualityLevel(value ? 0 : 1, true);
++            set
++            {
++                QualitySettings.SetQualityLevel(value ? 0 : 1, true);
++                UpdateTonemapping();
++            }
+             get => QualitySettings.GetQualityLevel() == 0;
+         }
+ 
++        // Low quality renders without HDR, where tonemapping only costs time:
++        // on the Raspberry Pi 5 it was over 40% of the highway's post-processing
++        private void UpdateTonemapping()
++        {
++            if (tonemapping != null)
++            {
++                tonemapping.active = !LowQuality;
++            }
++        }
++
+         protected override void SingletonAwake()
+         {
+             if (!postProcessingProfile.TryGet(out bloom))
+@@ -71,6 +86,11 @@
+             {
+                 YargLogger.LogError("Could not find film grain component in the post process volume.");
+             }
++            if (!postProcessingProfile.TryGet(out tonemapping))
++            {
++                YargLogger.LogError("Could not find tonemapping component in the post process volume.");
++            }
++            UpdateTonemapping();
+ 
+             UseSupportedDepthFormat();
+         }

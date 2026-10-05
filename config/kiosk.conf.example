@@ -22,10 +22,15 @@ WIFI_SSID=""
 WIFI_PSK=""
 
 # --- Display -------------------------------------------------------------------
-# YARG's render resolution. 4K is far too heavy under emulation; YARG renders
-# at this size and scales it up to the TV. Examples: 1920x1080, 1280x720, or
-# "native" for the TV's own resolution. Can be changed later in YARG's settings.
-YARG_RESOLUTION=1920x1080
+# Display mode the Pi drives the TV at (60 Hz); YARG runs full screen at this
+# size and the TV scales it up. 4K is far too heavy for the Pi's GPU. Examples:
+# 1280x720, 1920x1080, or "native" for the TV's own mode. 1280x720 keeps songs
+# above 60 FPS on a Pi 5. Change it later with DISPLAY_MODE in
+# /etc/rockband-kiosk/kiosk.conf on the Pi.
+YARG_RESOLUTION=1280x720
+# Highway render resolution as a fraction of the display mode, 0.5 to 1. Lower
+# is faster but blurrier; menus and the HUD stay sharp. Needs YARG_SOURCE=local.
+YARG_HIGHWAY_SCALE=0.75
 
 # --- YARG ----------------------------------------------------------------------
 # Where the image's YARG comes from:

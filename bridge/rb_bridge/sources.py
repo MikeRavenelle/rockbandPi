@@ -126,10 +126,16 @@ class Source:
         return (self.abs.get(code, info.min) - info.min) / (info.max - info.min)
 
     def dpad(self):
-        """D-pad as (x, y), from hat axes or xpad's d-pad-as-buttons mode."""
+        """D-pad as (x, y), from hat axes or xpad's d-pad-as-buttons mode.
+
+        xpad reports d-pad buttons as BTN_DPAD_* (current kernels, e.g. the
+        ION Drum Rocker) or BTN_TRIGGER_HAPPY1-4 (older xpad versions).
+        """
         x = self.abs.get(e.ABS_HAT0X, 0)
         y = self.abs.get(e.ABS_HAT0Y, 0)
         k = self.keys
+        x = x or (e.BTN_DPAD_RIGHT in k) - (e.BTN_DPAD_LEFT in k)
+        y = y or (e.BTN_DPAD_DOWN in k) - (e.BTN_DPAD_UP in k)
         x = x or (e.BTN_TRIGGER_HAPPY2 in k) - (e.BTN_TRIGGER_HAPPY1 in k)
         y = y or (e.BTN_TRIGGER_HAPPY4 in k) - (e.BTN_TRIGGER_HAPPY3 in k)
         return x, y

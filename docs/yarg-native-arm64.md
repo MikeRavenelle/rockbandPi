@@ -31,6 +31,8 @@ None of these block a port. Only the Unity player itself does.
 
 ## Phases
 
+**Results so far (2026-10-04):** with the IL2CPP build from Phase 2 and the tuning in [performance.md](performance.md), songs run at 60 FPS on a Pi 5, both solo and with a four-player band.
+
 ### Phase 0: measure under Box64
 
 Before changing anything, record a baseline on the Pi so later phases can be compared.

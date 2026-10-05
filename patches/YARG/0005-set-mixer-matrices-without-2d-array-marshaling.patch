@@ -1,0 +1,70 @@
+From: rockbandPi
+Subject: [PATCH] Set mixer matrices without 2D array marshaling
+
+BassMix.ChannelSetMatrix takes a float[,], and IL2CPP can't marshal 2D
+arrays to native code ("MarshalDirectiveException: Cannot marshal type
+'System.Single[,]'"). Songs whose stems have a panning matrix then fail to
+load their audio, gameplay never starts and the screen stays black. Song
+previews fail the same way.
+
+Add BassHelpers.SetMixerMatrix, which calls BASS_Mixer_ChannelSetMatrix
+with a pointer to the matrix. A float[,] is stored row by row, the same
+layout BASS expects, so nothing is copied.
+---
+diff --git a/Assets/Script/Audio/Bass/BassHelpers.cs b/Assets/Script/Audio/Bass/BassHelpers.cs
+--- a/Assets/Script/Audio/Bass/BassHelpers.cs
++++ b/Assets/Script/Audio/Bass/BassHelpers.cs
+@@ -1,4 +1,5 @@
+ ﻿using System;
++using System.Runtime.InteropServices;
+ using ManagedBass;
+ using ManagedBass.DirectX8;
+ using ManagedBass.Fx;
+@@ -15,6 +16,23 @@
+ 
+         public const float REVERB_VOLUME_MULTIPLIER = 0.80f;
+ 
++        [DllImport("bassmix", EntryPoint = "BASS_Mixer_ChannelSetMatrix")]
++        private static extern unsafe bool BASS_Mixer_ChannelSetMatrix(int handle, float* matrix);
++
++        /// <summary>
++        /// Same as BassMix.ChannelSetMatrix. IL2CPP can't marshal 2D arrays
++        /// (MarshalDirectiveException for float[,]), so this passes a pointer to
++        /// the matrix, which BASS reads as rows of output channels, exactly how
++        /// float[,] is laid out in memory.
++        /// </summary>
++        public static unsafe bool SetMixerMatrix(int handle, float[,] matrix)
++        {
++            fixed (float* values = &matrix[0, 0])
++            {
++                return BASS_Mixer_ChannelSetMatrix(handle, values);
++            }
++        }
++
+         public const int FADE_TIME_MILLISECONDS = 1000;
+ 
+         public const int REVERB_SLIDE_IN_MILLISECONDS = 300;
+diff --git a/Assets/Script/Audio/Bass/BassNormalizer.cs b/Assets/Script/Audio/Bass/BassNormalizer.cs
+--- a/Assets/Script/Audio/Bass/BassNormalizer.cs
++++ b/Assets/Script/Audio/Bass/BassNormalizer.cs
+@@ -97,7 +97,7 @@
+                         return false;
+                     }
+ 
+-                    if (!BassMix.ChannelSetMatrix(streamSplit, volumeMatrix))
++                    if (!BassHelpers.SetMixerMatrix(streamSplit, volumeMatrix))
+                     {
+                         YargLogger.LogFormatError("Failed to set {stem} matrices: {0}!", stemInfo.Stem, Bass.LastError);
+                         return false;
+diff --git a/Assets/Script/Audio/Bass/BassStemMixer.cs b/Assets/Script/Audio/Bass/BassStemMixer.cs
+--- a/Assets/Script/Audio/Bass/BassStemMixer.cs
++++ b/Assets/Script/Audio/Bass/BassStemMixer.cs
+@@ -504,7 +504,7 @@
+                     continue;
+                 }
+ 
+-                if (!BassMix.ChannelSetMatrix(streamHandles.Stream, volumeMatrix) || !BassMix.ChannelSetMatrix(reverbHandles.Stream, volumeMatrix))
++                if (!BassHelpers.SetMixerMatrix(streamHandles.Stream, volumeMatrix) || !BassHelpers.SetMixerMatrix(reverbHandles.Stream, volumeMatrix))
+                 {
+                     YargLogger.LogFormatError("Failed to set {0} matrices: {1}!", stem, Bass.LastError);
+                     return false;

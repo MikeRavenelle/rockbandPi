@@ -1,0 +1,26 @@
+From: rockbandPi
+Subject: [PATCH] No SMAA on the highway camera in Low quality
+
+The camera that renders all highways (HighwayCameraRendering) has SMAA set
+in the Gameplay scene, and unlike the track cameras (CameraPositioner) it
+keeps it in Low quality. SMAA adds three full-screen passes; on the
+Raspberry Pi 5 the highway's post-processing cost about 23 ms per frame at
+1080p. Turn it off in Low quality, like the track cameras do.
+---
+diff --git a/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs b/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs
+--- a/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs
++++ b/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs
+@@ -97,6 +97,13 @@
+             _gameManager = FindAnyObjectByType<GameManager>();
+             _renderCamera = GetComponent<Camera>();
+             _fadeCalcPass ??= new FadePass(this);
++
++            // Same as the track cameras (CameraPositioner): no SMAA in Low
++            // quality. SMAA is three extra full-screen passes over the highways
++            if (Application.isPlaying && SettingsManager.Settings.LowQuality.Value)
++            {
++                _renderCamera.GetUniversalAdditionalCameraData().antialiasing = AntialiasingMode.None;
++            }
+             _horizontalOffsetPx = 0f;
+             _scaleMultiplier = 1f;
+ 

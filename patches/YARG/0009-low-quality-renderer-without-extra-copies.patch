@@ -1,0 +1,36 @@
+From: rockbandPi
+Subject: [PATCH] Low quality renderer without an extra copy
+
+The Low quality URP renderer forces an intermediate texture (Always), so
+every camera renders into one and then copies it to its target. Use Auto:
+URP then renders straight to the target when nothing needs an intermediate.
+On tile-based GPUs every full-screen copy costs real time; on the Raspberry
+Pi 5 this took a song from 40 to 47 FPS.
+
+The venue's post-processing pass reads the camera's color texture, so it
+now asks URP for an intermediate texture itself (requiresIntermediateTexture).
+Without that the venue fails to render ("The passed in texture handle does
+not have a valid descriptor").
+---
+diff --git a/Assets/Script/Gameplay/VenueCameraRenderer.cs b/Assets/Script/Gameplay/VenueCameraRenderer.cs
+--- a/Assets/Script/Gameplay/VenueCameraRenderer.cs
++++ b/Assets/Script/Gameplay/VenueCameraRenderer.cs
+@@ -404,6 +404,9 @@
+             public VenuePostPostProcessingPass(VenueCameraRenderer vcr)
+             {
+                 renderPassEvent = RenderPassEvent.AfterRenderingPostProcessing;
++                // Reads the camera's color texture, which needs an intermediate
++                // texture when the renderer's mode is Auto (Low quality)
++                requiresIntermediateTexture = true;
+                 _alphaFixMaterial = vcr._alphaFixMaterial;
+             }
+ 
+diff --git a/Assets/Settings/Low_Renderer.asset b/Assets/Settings/Low_Renderer.asset
+--- a/Assets/Settings/Low_Renderer.asset
++++ b/Assets/Settings/Low_Renderer.asset
+@@ -67,4 +67,4 @@
+   m_DepthAttachmentFormat: 0
+   m_DepthTextureFormat: 0
+   m_AccurateGbufferNormals: 0
+-  m_IntermediateTextureMode: 1
++  m_IntermediateTextureMode: 0

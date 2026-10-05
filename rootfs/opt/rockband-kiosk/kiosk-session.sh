@@ -20,6 +20,7 @@ export XCURSOR_SIZE=24
 LOG_DIR="$HOME/.local/state/yarg-kiosk"
 mkdir -p "$LOG_DIR"
 log() { echo "$(date -Is) $*" >>"$LOG_DIR/session.log"; }
+display_connected() { grep -qx connected /sys/class/drm/card*-HDMI-A-*/status 2>/dev/null; }
 
 renderer="$YARG_RENDERER"
 quick_crashes=0
@@ -29,6 +30,16 @@ while true; do
   cage -s -- /opt/rockband-kiosk/yarg-launch.sh "$renderer" >>"$LOG_DIR/session.log" 2>&1
   code=$?
   log "YARG exited with code $code"
+
+  # Unplugging the TV (or a TV that drops HDMI when turned off) closes YARG's
+  # window, and YARG then exits cleanly as if Quit was chosen. Don't power off
+  # for that: wait for a display and start YARG again.
+  if [ "$code" -eq 0 ] && ! display_connected; then
+    log "YARG exited while no display is connected; waiting for one"
+    until display_connected; do sleep 2; done
+    quick_crashes=0
+    continue
+  fi
 
   if [ "$code" -eq 0 ]; then
     if [ "$ON_QUIT" = "poweroff" ]; then
