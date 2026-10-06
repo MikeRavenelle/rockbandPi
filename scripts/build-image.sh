@@ -110,8 +110,11 @@ done
 find "$BUILD" -name '*.sh' -exec chmod +x {} +
 chmod +x "$BUILD/build.sh" "$BUILD/build-docker.sh" "$STAGE/04-kiosk/files/bridge/rb-bridge"
 
-XONE_VERSION="$(git -C "$ROOT/external/xone" describe --tags --always | sed 's/^v//')"
-XPAD_NOONE_VERSION="$(git -C "$ROOT/external/xpad-noone" rev-parse --short HEAD)"
+# DKMS versions include a hash of our patches, so a patch change is a new
+# version and DKMS never keeps a module built from older patches
+patch_hash() { cat "$ROOT"/patches/"$1"/*.patch 2>/dev/null | git hash-object --stdin | cut -c1-7; }
+XONE_VERSION="$(git -C "$ROOT/external/xone" describe --tags --always | sed 's/^v//')-p$(patch_hash xone)"
+XPAD_NOONE_VERSION="$(git -C "$ROOT/external/xpad-noone" rev-parse --short HEAD)-p$(patch_hash xpad-noone)"
 
 # Values for the stage scripts (pi-gen only exports its own variables)
 cat > "$STAGE/kiosk.env" <<EOF

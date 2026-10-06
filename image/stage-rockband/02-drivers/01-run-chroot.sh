@@ -8,7 +8,11 @@ KVER=$(find /lib/modules -mindepth 1 -maxdepth 1 -name '*-rpi-v8' -printf '%f\n'
 echo "Building drivers for kernel $KVER"
 
 for mod in "xone/${XONE_VERSION}" "xpad-noone/${XPAD_NOONE_VERSION}"; do
-	dkms add "$mod" || true
+	# Forget any earlier build of this driver: DKMS skips "dkms build" for a
+	# version it has already built, even when the source changed, so a resumed
+	# image build (CONTINUE=1) would install the old, unpatched module.
+	dkms remove "${mod%%/*}" --all 2>/dev/null || true
+	dkms add "$mod"
 	dkms build "$mod" -k "$KVER"
 	dkms install "$mod" -k "$KVER" --force
 done

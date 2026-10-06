@@ -1,0 +1,50 @@
+From: rockbandPi
+Subject: [PATCH] Controller navigation on the Profiles screen
+
+The Profiles screen only mapped Red (back); connecting a profile needed a
+mouse. On a kiosk with only instruments and gamepads that made profiles
+impossible to connect. Map up/down to move between profiles and green to
+connect or disconnect the selected one. Connecting a profile without
+devices opens the existing device list, which is already navigable.
+---
+diff --git a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+--- a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+@@ -47,14 +47,37 @@
+         {
+             RefreshList();
+ 
++            // Up/down picks a profile and green connects or disconnects it, so
++            // profiles can be managed with a controller or instrument, not only
++            // a mouse (connecting a profile without devices opens the device list)
+             Navigator.Instance.PushScheme(new NavigationScheme(new()
+             {
++                NavigationScheme.Entry.NavigateUp,
++                NavigationScheme.Entry.NavigateDown,
++                new NavigationScheme.Entry(MenuAction.Green, "Menu.Common.Toggle", ToggleSelectedProfile),
+                 new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Back", () => MenuManager.Instance.PopMenu(), hide: true),
+             }, true));
+ 
+             PlayerContainer.PlayerAdded += OnPlayerAdded;
+         }
+ 
++        private void ToggleSelectedProfile()
++        {
++            if (_navigationGroup.SelectedBehaviour is not ProfileView view)
++            {
++                return;
++            }
++
++            if (PlayerContainer.IsProfileTaken(view.Profile))
++            {
++                view.Disconnect();
++            }
++            else
++            {
++                view.ConnectButtonAction();
++            }
++        }
++
+         private void OnDisable()
+         {
+             PlayerContainer.EnsureValidInstruments();
